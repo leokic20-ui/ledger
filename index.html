@@ -107,7 +107,7 @@
                 </div>
             </div>
 
-            <!-- VIEW 3: CHARTS (FINAL FIX) -->
+            <!-- VIEW 3: CHARTS -->
             <div v-else-if="currentView === 'charts'" key="chart" class="space-y-4">
                 <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
                     <div class="flex items-center gap-2 text-[#FF9900]">
@@ -129,10 +129,8 @@
                 </div>
 
                 <div class="neo-card p-4 bg-[#262626] h-72 relative flex items-center justify-center">
-                    <!-- 使用 v-show 替代 v-if/v-else，確保元素永遠存在於 DOM 中 -->
                     <div v-show="categoryStats.length === 0" class="text-gray-500 font-bold text-sm absolute">NO DATA FOR THIS PERIOD</div>
-                    <!-- Canvas 必須始終存在，否則 Chart.js 引用會斷裂 -->
-                    <canvas v-show="categoryStats.length > 0" ref="chartRef" class="w-full h-full"></canvas>
+                    <canvas v-show="categoryStats.length > 0" :key="chartKey" ref="chartRef" class="w-full h-full"></canvas>
                 </div>
                 
                 <div class="space-y-2 pb-4">
@@ -215,36 +213,50 @@
         </div>
     </div>
 
-    <!-- ADD/EDIT MODAL -->
+    <!-- ADD/EDIT MODAL (重構版) -->
     <div v-if="showModal" class="fixed inset-0 bg-black/90 z-50 flex items-end justify-center backdrop-blur-sm safe-pb">
         <div @click="closeModal" class="absolute inset-0"></div>
-        <div class="bg-[#1a1a1a] w-full max-w-md rounded-t-3xl border-t-4 border-[#FF9900] p-6 space-y-4 relative card-shadow mb-4 mx-2">
-            <div class="flex justify-between items-center mb-2">
+        <div class="bg-[#1a1a1a] w-full max-w-md rounded-t-3xl border-t-4 border-[#FF9900] p-5 space-y-3 relative card-shadow mb-4 mx-2">
+            
+            <div class="flex justify-between items-center">
                 <h3 class="font-black text-xl italic">{{ isEditing ? 'EDIT' : 'NEW' }} ENTRY</h3>
-                <button @click="closeModal" class="text-2xl text-gray-500 w-8 h-8 flex items-center justify-center bg-[#262626] rounded-full">×</button>
+                <button @click="closeModal" class="text-xl text-gray-500 w-6 h-6 flex items-center justify-center bg-[#262626] rounded-full">×</button>
             </div>
-            <div class="flex bg-[#262626] p-1 rounded-xl border border-[#333]">
-                <button @click="form.type = 'expense'" :class="['flex-1 py-3 rounded-lg font-black text-sm transition-all', form.type === 'expense' ? 'bg-[#333] text-white shadow-sm' : 'text-gray-500']">EXPENSE</button>
-                <button @click="form.type = 'income'" :class="['flex-1 py-3 rounded-lg font-black text-sm transition-all', form.type === 'income' ? 'bg-[#333] text-[#FF9900] shadow-sm' : 'text-gray-500']">INCOME</button>
+            
+            <!-- Type Selector: 更緊湊 -->
+            <div class="flex bg-[#262626] p-1 rounded-xl border border-[#333] h-10">
+                <button @click="form.type = 'expense'" :class="['flex-1 rounded-lg font-black text-xs transition-all flex items-center justify-center', form.type === 'expense' ? 'bg-[#333] text-white shadow-sm' : 'text-gray-500']">EXPENSE</button>
+                <button @click="form.type = 'income'" :class="['flex-1 rounded-lg font-black text-xs transition-all flex items-center justify-center', form.type === 'income' ? 'bg-[#333] text-[#FF9900] shadow-sm' : 'text-gray-500']">INCOME</button>
             </div>
+            
+            <!-- Amount Input: 略微縮小高度 -->
             <div class="relative">
-                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#FF9900] font-black text-2xl">$</span>
-                <input v-model.number="form.amount" type="number" inputmode="decimal" placeholder="0" class="w-full py-4 pl-10 pr-4 text-4xl font-mono font-bold rounded-xl text-right bg-[#262626] border-2 border-[#333] focus:border-[#FF9900]">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#FF9900] font-black text-xl">$</span>
+                <input v-model.number="form.amount" type="number" inputmode="decimal" placeholder="0" class="w-full py-3 pl-8 pr-4 text-3xl font-mono font-bold rounded-xl text-right bg-[#262626] border-2 border-[#333] focus:border-[#FF9900]">
             </div>
-            <div class="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto no-scrollbar py-1">
-                <button v-for="cat in categories" @click="form.category = cat.name" :class="['flex flex-col items-center justify-center p-2 rounded-xl border-2 transition-all active:scale-95', form.category === cat.name ? 'border-[#FF9900] bg-[#262626]' : 'border-transparent bg-[#1a1a1a]']">
-                    <span class="text-2xl mb-1">{{ cat.icon }}</span>
-                    <span class="text-[9px] font-bold uppercase truncate w-full text-center">{{ cat.name }}</span>
+            
+            <!-- Category Grid: 移除滾動，調整網格與尺寸 -->
+            <!-- 變更點：grid-cols-4 且無 max-height, overflow-y-auto -->
+            <div class="grid grid-cols-4 gap-2 py-1">
+                <button v-for="cat in categories" @click="form.category = cat.name" :class="['flex flex-col items-center justify-center p-2 rounded-xl border-2 transition-all active:scale-95 h-16', form.category === cat.name ? 'border-[#FF9900] bg-[#262626]' : 'border-transparent bg-[#1a1a1a]']">
+                    <span class="text-xl mb-1">{{ cat.icon }}</span> <!-- 圖標縮小至 xl -->
+                    <span class="text-[8px] font-bold uppercase truncate w-full text-center">{{ cat.name }}</span>
                 </button>
             </div>
+            
+            <!-- Account & Date -->
             <div class="grid grid-cols-2 gap-3">
-                <select v-model="form.account" class="p-3 rounded-xl font-bold text-xs uppercase bg-[#262626]"><option v-for="acc in accounts" :value="acc.name">{{ acc.name }}</option></select>
-                <input v-model="form.date" type="date" class="p-3 rounded-xl font-mono text-xs bg-[#262626]">
+                <select v-model="form.account" class="p-2 rounded-xl font-bold text-xs uppercase bg-[#262626] h-10"><option v-for="acc in accounts" :value="acc.name">{{ acc.name }}</option></select>
+                <input v-model="form.date" type="date" class="p-2 rounded-xl font-mono text-xs bg-[#262626] h-10">
             </div>
+            
+            <!-- Note -->
             <input v-model="form.note" type="text" placeholder="Add a note..." class="w-full p-3 rounded-xl text-xs bg-[#262626]">
-            <div class="flex gap-3 pt-2">
-                <button v-if="isEditing" @click="deleteTransaction" class="flex-1 py-4 bg-red-900/30 text-red-500 font-black rounded-xl border-2 border-red-900 active:scale-95 transition-transform">DEL</button>
-                <button @click="saveTransaction" class="flex-[2] py-4 bg-[#FF9900] text-black font-black rounded-xl border-2 border-black shadow-[4px_4px_0px_black] active:translate-y-1 active:shadow-none transition-all text-lg">CONFIRM</button>
+            
+            <!-- Action Buttons -->
+            <div class="flex gap-3 pt-1">
+                <button v-if="isEditing" @click="deleteTransaction" class="flex-1 py-3 bg-red-900/30 text-red-500 font-black rounded-xl border-2 border-red-900 active:scale-95 transition-transform text-xs">DEL</button>
+                <button @click="saveTransaction" class="flex-[2] py-3 bg-[#FF9900] text-black font-black rounded-xl border-2 border-black shadow-[4px_4px_0px_black] active:translate-y-1 active:shadow-none transition-all text-sm">CONFIRM</button>
             </div>
         </div>
     </div>
@@ -283,6 +295,7 @@
             const editingId = ref(null);
             const fixedItems = ref([]);
             const chartRef = ref(null);
+            const chartKey = ref(0); 
             
             // Filter Data
             const showFilterModal = ref(false);
@@ -354,7 +367,6 @@
                     e = new Date(now.getFullYear() - 1, 11, 31);
                 }
                 const newRange = { start: getHKDate(s), end: getHKDate(e) };
-                tempFilter.value = newRange;
                 return newRange;
             };
 
@@ -378,20 +390,19 @@
             const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
 
             let chart = null;
-            const renderChart = () => {
-                // 如果沒有數據，清空舊圖並退出
-                if (categoryStats.value.length === 0) { 
-                    if (chart) chart.destroy(); 
-                    return; 
-                }
+            const renderChart = async () => {
+                if (categoryStats.value.length === 0) { if (chart) chart.destroy(); return; }
                 
-                // 安全檢查：等待 Canvas 出現
-                if (!chartRef.value) {
-                    console.warn('Canvas not ready, retrying...');
-                    return; 
-                }
+                chartKey.value++; 
+                await nextTick(); 
+
+                if (!chartRef.value) return;
                 
-                if (chart) chart.destroy();
+                if (chart) {
+                    chart.destroy();
+                    chart = null;
+                }
+
                 const labels = categoryStats.value.map(s => s.name);
                 const data = categoryStats.value.map(s => s.total);
                 
@@ -417,10 +428,15 @@
             
             watch(currentView, async (newView) => {
                 if (newView === 'charts') {
-                    setFilterPreset('thisMonth');
-                    filterRange.value = setFilterPreset('thisMonth'); 
-                    await nextTick();
-                    setTimeout(renderChart, 350); // 350ms delay is safe for animation
+                    const thisMonthRange = setFilterPreset('thisMonth');
+                    const needUpdate = filterRange.value.start !== thisMonthRange.start || filterRange.value.end !== thisMonthRange.end;
+                    
+                    if (needUpdate) {
+                        filterRange.value = thisMonthRange; 
+                    } else {
+                        await nextTick();
+                        setTimeout(renderChart, 350); 
+                    }
                 }
             });
             
@@ -435,6 +451,7 @@
                 currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, 
                 showFilterModal, filterRange, tempFilter, openFilterModal, applyFilter, setFilterPreset, formatDateRange, netWorthFiltered, categoryStats, transactionsInFilterRange,
                 syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid, chartRef, totalExpenseFiltered, dailyAverage,
+                chartKey, 
                 changeMonth: (o) => { const d = new Date(currentDate.value); d.setMonth(d.getMonth() + o); currentDate.value = d; },
                 selectDate: (d) => selectedDate.value = d,
                 formatYearMonth: (d) => d.toLocaleString('default', { month: 'short', year: 'numeric' }),
