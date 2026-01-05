@@ -16,13 +16,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
 
     <style>
-        /* 核心修改：鎖死 Body */
         html, body { 
             height: 100%; 
             width: 100%; 
             margin: 0; 
-            overflow: hidden; /* 禁止全頁捲動 */
-            position: fixed; /* 強制固定，防止 iOS Safari 回彈 */
+            overflow: hidden; 
+            position: fixed; 
         }
         
         body { 
@@ -34,13 +33,12 @@
 
         * { touch-action: manipulation; }
         
-        /* 自定義捲軸樣式 (讓捲動區更像 App) */
         .custom-scroll {
             overflow-y: auto;
-            -webkit-overflow-scrolling: touch; /* iOS 慣性滑動 */
-            overscroll-behavior-y: contain; /* 防止滑動穿透到 Body */
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
         }
-        .custom-scroll::-webkit-scrollbar { display: none; } /* 隱藏捲軸條 */
+        .custom-scroll::-webkit-scrollbar { display: none; }
 
         .neo-card { background-color: #262626; border: 2px solid #333; box-shadow: 4px 4px 0px 0px #000; border-radius: 12px; }
         .sticker-btn { background-color: #FF9900; color: black; border: 2px solid black; box-shadow: 4px 4px 0px 0px #000; font-weight: 900; text-transform: uppercase; }
@@ -52,17 +50,15 @@
         .pop-enter-from { opacity: 0; transform: scale(0.95); }
         .pop-leave-to { opacity: 0; transform: scale(1.05); display: none; }
         
-        /* 安全區域設定 */
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
         .safe-pt { padding-top: env(safe-area-inset-top); }
     </style>
 </head>
 <body class="flex flex-col w-full">
 
-<!-- App Container: 佔滿 100% 高度 -->
 <div id="app" class="flex flex-col h-full w-full max-w-md mx-auto relative overflow-hidden">
 
-    <!-- HEADER: 固定在頂部 -->
+    <!-- HEADER -->
     <header class="safe-pt px-4 pt-4 pb-2 flex justify-between items-center bg-[#1a1a1a] border-b-2 border-[#333] z-20 shrink-0">
         <h1 class="text-xl font-black italic">LEDGER<span class="text-[#FF9900]">.OS</span></h1>
         <div class="flex items-center gap-2 bg-[#262626] px-2 py-1 rounded border border-[#333]">
@@ -71,10 +67,7 @@
         </div>
     </header>
 
-    <!-- MAIN CONTENT: 唯一可捲動區域 -->
-    <!-- flex-1: 佔據剩餘空間 -->
-    <!-- custom-scroll: 應用捲動樣式 -->
-    <!-- pb-28: 底部留白，防止被 FAB 和 Nav 擋住 -->
+    <!-- MAIN CONTENT -->
     <main class="flex-1 custom-scroll p-4 pb-28 relative">
         <transition name="pop" mode="out-in">
             
@@ -107,7 +100,14 @@
                     <div v-for="t in filteredTransactions" :key="t.id" @click="editTransaction(t)" class="neo-card p-3 flex justify-between items-center active:scale-[0.98]">
                         <div class="flex items-center gap-3">
                             <span class="text-xl">{{ getCategoryIcon(t.category) }}</span>
-                            <div><div class="font-bold text-sm">{{ t.category }}</div><div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div></div>
+                            <div>
+                                <div class="font-bold text-sm flex items-center gap-1">
+                                    {{ t.category }}
+                                    <!-- 標記自動生成的項目 -->
+                                    <span v-if="t.fixedItemId" class="text-[8px] bg-[#333] px-1 rounded text-gray-400 border border-gray-600">AUTO</span>
+                                </div>
+                                <div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div>
+                            </div>
                         </div>
                         <div :class="['font-mono font-bold', t.type === 'expense' ? 'text-white' : 'text-[#FF9900]']">{{ t.type === 'expense' ? '-' : '+' }}{{ t.amount }}</div>
                     </div>
@@ -183,7 +183,7 @@
                     <div v-for="(item, idx) in fixedItems" :key="idx" class="flex justify-between items-center bg-[#1a1a1a] p-2 rounded mb-2 border border-[#333]">
                         <div>
                             <div class="font-bold text-xs">{{ item.category }} (${{ item.amount }})</div>
-                            <div class="text-[10px] text-gray-500">{{ item.startMonth }} ➝ {{ item.endMonth || 'Forever' }}</div>
+                            <div class="text-[10px] text-gray-500">Auto-adds on 1st of month ({{ item.startMonth }} ➝ {{ item.endMonth || 'Forever' }})</div>
                         </div>
                         <button @click="removeFixedItem(idx)" class="text-red-500 font-bold px-2">×</button>
                     </div>
@@ -212,7 +212,7 @@
     <!-- FAB -->
     <button @click="openAddModal" class="absolute bottom-24 right-5 w-16 h-16 rounded-full sticker-btn flex items-center justify-center z-30 text-4xl pb-1">+</button>
 
-    <!-- NAV: 固定在底部 -->
+    <!-- NAV -->
     <nav class="safe-pb bg-[#1a1a1a] border-t-2 border-[#333] h-20 shrink-0 flex justify-around items-center z-20 w-full">
         <button v-for="v in ['calendar', 'accounts', 'charts', 'settings']" @click="currentView = v" class="flex flex-col items-center justify-center w-16 h-full transition-all active:scale-90">
             <span class="text-2xl mb-1 filter drop-shadow-md" :class="currentView === v ? 'opacity-100 scale-110' : 'opacity-40 grayscale'">{{ {calendar:'📅', accounts:'💳', charts:'📊', settings:'⚙️'}[v] }}</span>
@@ -319,7 +319,6 @@
             const chartRef = ref(null);
             const chartKey = ref(0); 
             
-            // Filter Data
             const showFilterModal = ref(false);
             const today = new Date();
             const startOfMonth = getHKDate(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -330,7 +329,19 @@
             const newFixed = ref({ type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' });
             const chartColors = ['#FF9900', '#00CED1', '#FF69B4', '#9370DB', '#4169E1', '#FFD700', '#32CD32', '#FF4500'];
             const accounts = ref([{ name: 'Bank', icon: '🏦' }, { name: 'Cash', icon: '💵' }, { name: 'Credit', icon: '💳' }, { name: 'Octopus', icon: '🐙' }]);
-            const categories = [{ name: 'Food', icon: '🍔' }, { name: 'Transport', icon: '🚌' }, { name: 'Shopping', icon: '🛍️' }, { name: 'Ent.', icon: '🎬' }, { name: 'Bills', icon: '🧾' }, { name: 'Salary', icon: '💰' }, { name: 'Travel', icon: '✈️' }, { name: 'Health', icon: '💊' }];
+            
+            // 新增 Household 類別
+            const categories = [
+                { name: 'Food', icon: '🍔' }, 
+                { name: 'Transport', icon: '🚌' }, 
+                { name: 'Shopping', icon: '🛍️' }, 
+                { name: 'Ent.', icon: '🎬' }, 
+                { name: 'Bills', icon: '🧾' }, 
+                { name: 'Household', icon: '🏠' }, // 新增
+                { name: 'Salary', icon: '💰' }, 
+                { name: 'Travel', icon: '✈️' }, 
+                { name: 'Health', icon: '💊' }
+            ];
             const form = ref({ type: 'expense', amount: '', category: 'Food', account: 'Cash', date: '', note: '' });
 
             const displayUid = computed(() => userId.value ? userId.value.substring(0,6) : 'OFFLINE');
@@ -396,6 +407,7 @@
                 if (!newFixed.value.amount || !newFixed.value.startMonth) return alert("Start Month required!"); 
                 await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value); 
                 newFixed.value = { type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' };
+                alert("Auto-rule added. It will trigger on the 1st of each month.");
             };
 
             const saveTransaction = async () => {
@@ -410,6 +422,45 @@
             const deleteTransaction = async () => { if (confirm("Delete?")) { await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).delete(); closeModal(); } };
             const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
             const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
+
+            // 自動檢查固定項目邏輯 (核心功能)
+            const checkFixedItems = async () => {
+                if (!userId.value || fixedItems.value.length === 0) return;
+                
+                const now = new Date();
+                const currentMonthStr = getHKDate(now).slice(0, 7); // "2024-01"
+                const firstDayOfCurrentMonth = `${currentMonthStr}-01`;
+
+                // 只有今天 >= 1號才執行 (其實每天都可以檢查，因為我們會用 ID 防止重複)
+                // 這裡我們簡單點，只要打開 App 就檢查一遍
+                
+                for (const item of fixedItems.value) {
+                    // 1. 檢查日期範圍是否有效
+                    if (currentMonthStr < item.startMonth) continue; // 尚未開始
+                    if (item.endMonth && currentMonthStr > item.endMonth) continue; // 已經結束
+
+                    // 2. 檢查本月是否已經產生過
+                    // 我們用一個特殊的 Query: 找這個月，且 fixedItemId 等於當前 item.id 的交易
+                    const snapshot = await db.collection('users').doc(userId.value).collection('transactions')
+                        .where('fixedItemId', '==', item.id)
+                        .where('date', '==', firstDayOfCurrentMonth)
+                        .get();
+
+                    if (snapshot.empty) {
+                        // 3. 如果沒有，自動生成
+                        console.log(`Auto-adding fixed item: ${item.category}`);
+                        await db.collection('users').doc(userId.value).collection('transactions').add({
+                            type: item.type,
+                            amount: item.amount,
+                            category: item.category,
+                            account: 'Bank', // 預設 Bank，你可以改
+                            date: firstDayOfCurrentMonth,
+                            note: item.note || 'Auto Fixed',
+                            fixedItemId: item.id // 關鍵：標記這是由哪個規則生成的
+                        });
+                    }
+                }
+            };
 
             let chart = null;
             const renderChart = async () => {
@@ -430,7 +481,7 @@
                 
                 chart = new Chart(chartRef.value, {
                     type: 'doughnut',
-                    data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
+                     { labels: labels, datasets: [{  data, backgroundColor: chartColors, borderWidth: 0 }] },
                     options: { 
                         responsive: true, 
                         maintainAspectRatio: false, 
@@ -442,9 +493,23 @@
                 });
             };
 
-            const initAuth = () => auth.onAuthStateChanged(async user => { if (user) { userId.value = user.uid; syncStatusColor.value = 'bg-green-500'; loadData(); loadFixedItems(); } else { await auth.signInAnonymously(); } });
-            const loadData = () => db.collection('users').doc(userId.value).collection('transactions').orderBy('date', 'desc').onSnapshot(s => transactions.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
-            const loadFixedItems = () => db.collection('users').doc(userId.value).collection('fixedItems').onSnapshot(s => fixedItems.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+            const initAuth = () => auth.onAuthStateChanged(async user => { 
+                if (user) { 
+                    userId.value = user.uid; 
+                    syncStatusColor.value = 'bg-green-500'; 
+                    // 監聽數據
+                    db.collection('users').doc(userId.value).collection('transactions').orderBy('date', 'desc').onSnapshot(s => transactions.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    
+                    // 監聽固定項目，並在載入後執行檢查
+                    db.collection('users').doc(userId.value).collection('fixedItems').onSnapshot(s => {
+                        fixedItems.value = s.docs.map(d => ({ id: d.id, ...d.data() }));
+                        // 當固定項目列表載入完成後，執行一次自動檢查
+                        setTimeout(checkFixedItems, 2000); 
+                    });
+                } else { 
+                    await auth.signInAnonymously(); 
+                } 
+            });
 
             onMounted(initAuth);
             
