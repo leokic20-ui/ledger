@@ -16,54 +16,18 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <style>
-        /* Base Setup */
-        body { 
-            background-color: #1a1a1a; 
-            color: #ffffff; 
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            overscroll-behavior-y: none;
-        }
-        
+        body { background-color: #1a1a1a; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         * { touch-action: manipulation; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-        /* Neo-Brutalism Styles */
-        .sticker-btn {
-            background-color: #FF9900; color: black; border: 2px solid black;
-            box-shadow: 4px 4px 0px 0px #000000;
-            transition: all 0.1s; font-weight: 900; text-transform: uppercase;
-        }
-        .sticker-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px 0px #000000; }
-        
-        .sticker-dark {
-            background-color: #333333; color: white; border: 2px solid black;
-            box-shadow: 4px 4px 0px 0px #000000;
-        }
-        .sticker-dark:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px 0px #000000; }
-
-        .neo-card {
-            background-color: #262626; border: 2px solid #333333;
-            box-shadow: 4px 4px 0px 0px #000000; border-radius: 12px;
-        }
-
-        /* Hidden Input Trick */
-        .hidden-date-input {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            opacity: 0; cursor: pointer; z-index: 10;
-        }
-
-        /* Inputs */
-        input:not(.hidden-date-input), select {
-            background: #1a1a1a; color: white; border: 2px solid #333333; outline: none; border-radius: 8px;
-        }
-        input:not(.hidden-date-input):focus, select:focus { border-color: #FF9900; }
-
+        .neo-card { background-color: #262626; border: 2px solid #333; box-shadow: 4px 4px 0px 0px #000; border-radius: 12px; }
+        .sticker-btn { background-color: #FF9900; color: black; border: 2px solid black; box-shadow: 4px 4px 0px 0px #000; font-weight: 900; }
+        .sticker-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px 0px #000; }
+        .hidden-date-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; z-index: 10; }
+        input:not(.hidden-date-input), select { background: #1a1a1a; color: white; border: 2px solid #333; outline: none; border-radius: 8px; }
+        input:focus { border-color: #FF9900; }
         .pop-enter-active, .pop-leave-active { transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
         .pop-enter-from { opacity: 0; transform: scale(0.95); }
         .pop-leave-to { opacity: 0; transform: scale(1.05); display: none; }
-        
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
         .safe-pt { padding-top: env(safe-area-inset-top); }
     </style>
@@ -73,11 +37,12 @@
 <div id="app" class="flex flex-col h-full w-full max-w-md mx-auto relative">
 
     <!-- HEADER -->
-    <header class="safe-pt px-4 pt-4 pb-2 flex justify-between items-center bg-[#1a1a1a] border-b-2 border-[#333333] z-20 shrink-0">
-        <h1 class="text-xl font-black tracking-tighter italic">LEDGER<span class="text-[#FF9900]">.OS</span></h1>
+    <header class="safe-pt px-4 pt-4 pb-2 flex justify-between items-center bg-[#1a1a1a] border-b-2 border-[#333] z-20 shrink-0">
+        <h1 class="text-xl font-black italic">LEDGER<span class="text-[#FF9900]">.OS</span></h1>
         <div class="flex items-center gap-2 bg-[#262626] px-2 py-1 rounded border border-[#333]">
             <div :class="syncStatusColor" class="w-2 h-2 rounded-full animate-pulse"></div>
-            <span class="text-[10px] text-gray-400 font-mono">{{ currentView.toUpperCase() }}</span>
+            <!-- 強制顯示 UID -->
+            <span class="text-[10px] text-gray-400 font-mono">{{ displayUid }}</span>
         </div>
     </header>
 
@@ -85,127 +50,83 @@
     <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-28 no-scrollbar relative">
         <transition name="pop">
             
-            <!-- VIEW 1: CALENDAR (Updated) -->
+            <!-- CALENDAR -->
             <div v-if="currentView === 'calendar'" key="cal" class="space-y-4">
-                <!-- Month Nav & Date Picker -->
                 <div class="neo-card p-2 flex justify-between items-center bg-[#262626] relative">
-                    <button @click="changeMonth(-1)" class="p-2 text-[#FF9900] font-black text-lg active:scale-90 z-20">◀</button>
-                    
-                    <!-- Middle Area: Clickable for Month Picker -->
+                    <button @click="changeMonth(-1)" class="p-2 text-[#FF9900] font-black text-lg z-20">◀</button>
                     <div class="relative flex-1 flex justify-center items-center h-full">
-                        <span class="font-black text-xl tracking-wide border-b-2 border-dashed border-[#FF9900] pb-1">
-                            {{ formatYearMonth(currentDate) }}
-                        </span>
-                        <!-- Hidden Month Picker covering the text -->
-                        <input type="month" 
-                               :value="currentYearMonthStr" 
-                               @input="onMonthPick" 
-                               class="hidden-date-input">
+                        <span class="font-black text-xl tracking-wide border-b-2 border-dashed border-[#FF9900] pb-1">{{ formatYearMonth(currentDate) }}</span>
+                        <input type="month" :value="currentYearMonthStr" @input="onMonthPick" class="hidden-date-input">
                     </div>
-
-                    <button @click="changeMonth(1)" class="p-2 text-[#FF9900] font-black text-lg active:scale-90 z-20">▶</button>
+                    <button @click="changeMonth(1)" class="p-2 text-[#FF9900] font-black text-lg z-20">▶</button>
                 </div>
-
-                <!-- Calendar Grid -->
                 <div class="neo-card p-2 bg-[#1a1a1a]">
-                    <div class="grid grid-cols-7 mb-2 text-center">
-                        <div v-for="d in ['S','M','T','W','T','F','S']" class="text-[10px] text-gray-500 font-bold">{{ d }}</div>
-                    </div>
+                    <div class="grid grid-cols-7 mb-2 text-center text-[10px] text-gray-500 font-bold"><div v-for="d in ['S','M','T','W','T','F','S']">{{ d }}</div></div>
                     <div class="grid grid-cols-7 gap-1">
                         <div v-for="n in startDayOfWeek" :key="'empty'+n" class="h-10"></div>
-                        <div v-for="day in daysInMonth" :key="day.dateStr" 
-                             @click="selectDate(day.dateStr)"
-                             class="h-10 relative flex items-center justify-center rounded-lg border border-transparent transition-all active:scale-90"
-                             :class="dayClass(day)">
+                        <div v-for="day in daysInMonth" :key="day.dateStr" @click="selectDate(day.dateStr)" class="h-10 relative flex items-center justify-center rounded-lg border border-transparent transition-all active:scale-90" :class="dayClass(day)">
                             <span class="text-sm font-bold z-10">{{ day.dayNum }}</span>
                             <div v-if="hasTransaction(day.dateStr)" class="absolute bottom-1 w-1 h-1 rounded-full bg-[#FF9900]"></div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Daily List -->
                 <div class="space-y-2">
                     <div class="flex justify-between items-end border-b border-[#333] pb-1 px-1">
                         <span class="text-xs font-bold text-gray-400">{{ selectedDate }}</span>
                         <span class="font-mono font-bold text-[#FF9900]">${{ dayTotal }}</span>
                     </div>
                     <div v-if="filteredTransactions.length === 0" class="text-center py-6 text-gray-600 text-xs">No records.</div>
-                    <div v-for="t in filteredTransactions" :key="t.id" @click="editTransaction(t)"
-                         class="neo-card p-3 flex justify-between items-center active:scale-[0.98] transition-transform">
+                    <div v-for="t in filteredTransactions" :key="t.id" @click="editTransaction(t)" class="neo-card p-3 flex justify-between items-center active:scale-[0.98]">
                         <div class="flex items-center gap-3">
                             <span class="text-xl">{{ getCategoryIcon(t.category) }}</span>
-                            <div>
-                                <div class="font-bold text-sm">{{ t.category }}</div>
-                                <div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div>
-                            </div>
+                            <div><div class="font-bold text-sm">{{ t.category }}</div><div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div></div>
                         </div>
-                        <div :class="['font-mono font-bold', t.type === 'expense' ? 'text-white' : 'text-[#FF9900]']">
-                            {{ t.type === 'expense' ? '-' : '+' }}{{ t.amount }}
-                        </div>
+                        <div :class="['font-mono font-bold', t.type === 'expense' ? 'text-white' : 'text-[#FF9900]']">{{ t.type === 'expense' ? '-' : '+' }}{{ t.amount }}</div>
                     </div>
                 </div>
             </div>
 
-            <!-- VIEW 2: ACCOUNTS (Updated with Date Filter) -->
+            <!-- ACCOUNTS -->
             <div v-else-if="currentView === 'accounts'" key="acc" class="space-y-4">
-                
-                <!-- Net Worth Card with Date Picker -->
-                <div class="relative neo-card p-5 bg-gradient-to-br from-[#FF9900] to-[#cc7a00] text-black border-none active:scale-[0.99] transition-transform">
-                    <!-- Hidden Date Picker Overlay -->
+                <div class="relative neo-card p-5 bg-gradient-to-br from-[#FF9900] to-[#cc7a00] text-black border-none active:scale-[0.99]">
                     <input type="month" v-model="accFilterDate" class="hidden-date-input">
-                    
-                    <div class="flex justify-between items-start">
-                        <div class="text-[10px] font-black uppercase tracking-widest opacity-80 flex items-center gap-1">
-                            Net Worth ({{ formatYearMonth(new Date(accFilterDate + '-01')) }}) ▼
-                        </div>
-                        <div class="text-[10px] font-bold border border-black px-1 rounded">FILTER</div>
-                    </div>
+                    <div class="text-[10px] font-black uppercase tracking-widest opacity-80">Net Worth ({{ formatYearMonth(new Date(accFilterDate + '-01')) }}) ▼</div>
                     <div class="text-4xl font-black font-mono mt-2">${{ netWorthFiltered }}</div>
-                    <div class="text-[10px] mt-1 opacity-70">Tap card to change month</div>
                 </div>
-
-                <!-- Account List (Showing REAL-TIME Balance, not filtered) -->
-                <!-- User usually wants to see current wallet money regardless of history filter, 
-                     but if you want filtered balance per account, we can apply it too. 
-                     Here I assume "Accounts" list shows CURRENT ACTUAL MONEY, 
-                     while Net Worth card shows "Performance of selected month". -->
                 <div class="grid gap-3">
-                     <div class="text-[10px] text-gray-500 font-bold uppercase ml-1">Current Balances (Real-time)</div>
+                     <div class="text-[10px] text-gray-500 font-bold uppercase ml-1">Current Balances</div>
                     <div v-for="acc in accounts" :key="acc.name" class="neo-card p-4 flex justify-between items-center bg-[#262626]">
-                        <div class="flex items-center gap-3">
-                            <span class="text-2xl">{{ acc.icon }}</span>
-                            <span class="font-bold">{{ acc.name }}</span>
-                        </div>
+                        <div class="flex items-center gap-3"><span class="text-2xl">{{ acc.icon }}</span><span class="font-bold">{{ acc.name }}</span></div>
                         <span class="font-mono text-lg font-bold">${{ getAccountBalance(acc.name) }}</span>
                     </div>
                 </div>
             </div>
 
-            <!-- VIEW 3: CHARTS -->
+            <!-- CHARTS -->
             <div v-else-if="currentView === 'charts'" key="chart" class="space-y-4">
+                <!-- 使用 v-show 避免重複渲染導致的 canvas 消失問題 -->
                 <div class="neo-card p-4 bg-[#262626] h-64 relative">
-                    anvas id="expenseChart"></canvas>
+                    <canvas id="expenseChart"></canvas>
                 </div>
                 <div class="space-y-2 pb-4">
                     <div v-for="(stat, index) in categoryStats" :key="stat.name" class="flex justify-between items-center p-2 border-b border-[#333]">
                         <div class="flex items-center gap-2">
                             <div class="w-3 h-3 rounded-full shadow" :style="{backgroundColor: chartColors[index % chartColors.length]}"></div>
-                            <span class="text-xl">{{ stat.icon }}</span>
-                            <span class="font-bold text-xs">{{ stat.name }}</span>
+                            <span class="text-xl">{{ stat.icon }}</span><span class="font-bold text-xs">{{ stat.name }}</span>
                         </div>
                         <div class="font-mono text-sm">${{ stat.total }} <span class="text-gray-500 text-[10px]">({{ stat.percent }}%)</span></div>
                     </div>
                 </div>
             </div>
 
-            <!-- VIEW 4: SETTINGS -->
+            <!-- SETTINGS -->
             <div v-else-if="currentView === 'settings'" key="set" class="space-y-6">
                 <div class="neo-card p-4 bg-[#262626]">
                     <h3 class="text-[#FF9900] font-black text-sm mb-3 uppercase flex items-center gap-2"><span>🔄</span> Fixed Monthly Items</h3>
                     <div v-for="(item, idx) in fixedItems" :key="idx" class="flex justify-between items-center bg-[#1a1a1a] p-2 rounded mb-2 border border-[#333]">
                         <div>
                             <div class="font-bold text-xs">{{ item.category }} (${{ item.amount }})</div>
-                            <div class="text-[10px] text-gray-500">{{ item.type }} • {{ item.note }}</div>
+                            <div class="text-[10px] text-gray-500">Starts: {{ item.startMonth || 'Now' }} • {{ item.note }}</div>
                         </div>
                         <button @click="removeFixedItem(idx)" class="text-red-500 font-bold px-2">×</button>
                     </div>
@@ -216,14 +137,16 @@
                         </div>
                         <div class="flex gap-2">
                             <select v-model="newFixed.category" class="w-1/2 text-xs p-2"><option v-for="c in categories" :value="c.name">{{ c.name }}</option></select>
-                            <input v-model="newFixed.note" placeholder="Note" class="w-1/2 text-xs p-2">
+                            <!-- 生效月份選擇 -->
+                            <input v-model="newFixed.startMonth" type="month" class="w-1/2 text-xs p-2 font-mono text-gray-400">
                         </div>
-                        <button @click="addFixedItem" class="sticker-dark w-full py-2 text-xs font-bold rounded mt-2">ADD FIXED ITEM</button>
+                        <input v-model="newFixed.note" placeholder="Note" class="w-full text-xs p-2">
+                        <button @click="addFixedItem" class="sticker-btn bg-[#333] text-white w-full py-2 text-xs rounded mt-2">ADD FIXED ITEM</button>
                     </div>
                 </div>
                 <div class="neo-card p-4 bg-[#262626]">
-                    <button @click="exportJSON" class="sticker-dark w-full py-3 rounded font-bold text-sm">EXPORT JSON BACKUP</button>
-                    <div class="text-[10px] text-gray-600 text-center mt-2 font-mono">UID: {{ userId ? userId.slice(0,8) : '...' }}</div>
+                    <button @click="exportJSON" class="sticker-btn bg-[#333] text-white w-full py-3 rounded font-bold text-sm">EXPORT JSON BACKUP</button>
+                    <div class="text-[10px] text-gray-600 text-center mt-2 font-mono">UID: {{ displayUid }}</div>
                 </div>
             </div>
         </transition>
@@ -233,7 +156,7 @@
     <button @click="openAddModal" class="absolute bottom-24 right-5 w-16 h-16 rounded-full sticker-btn flex items-center justify-center z-30 text-4xl pb-1">+</button>
 
     <!-- NAV -->
-    <nav class="safe-pb bg-[#1a1a1a] border-t-2 border-[#333333] h-20 shrink-0 flex justify-around items-center z-20">
+    <nav class="safe-pb bg-[#1a1a1a] border-t-2 border-[#333] h-20 shrink-0 flex justify-around items-center z-20">
         <button v-for="v in ['calendar', 'accounts', 'charts', 'settings']" @click="currentView = v" class="flex flex-col items-center justify-center w-16 h-full transition-all active:scale-90">
             <span class="text-2xl mb-1 filter drop-shadow-md" :class="currentView === v ? 'opacity-100 scale-110' : 'opacity-40 grayscale'">{{ {calendar:'📅', accounts:'💳', charts:'📊', settings:'⚙️'}[v] }}</span>
             <span class="text-[9px] font-black uppercase tracking-wider" :class="currentView === v ? 'text-[#FF9900]' : 'text-gray-600'">{{ v }}</span>
@@ -288,7 +211,7 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const auth = firebase.auth();
-    const { createApp, ref, computed, onMounted, watch } = Vue;
+    const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
     createApp({
         setup() {
@@ -302,16 +225,16 @@
             const isEditing = ref(false);
             const editingId = ref(null);
             const fixedItems = ref([]);
-            const newFixed = ref({ type: 'expense', amount: '', category: 'Food', note: '' });
+            // 新增 startMonth
+            const newFixed = ref({ type: 'expense', amount: '', category: 'Food', note: '', startMonth: '' });
             const chartColors = ['#FF9900', '#00CED1', '#FF69B4', '#9370DB', '#4169E1', '#FFD700', '#32CD32', '#FF4500'];
             const accounts = ref([{ name: 'Bank', icon: '🏦' }, { name: 'Cash', icon: '💵' }, { name: 'Credit', icon: '💳' }, { name: 'Octopus', icon: '🐙' }]);
             const categories = [{ name: 'Food', icon: '🍔' }, { name: 'Transport', icon: '🚌' }, { name: 'Shopping', icon: '🛍️' }, { name: 'Ent.', icon: '🎬' }, { name: 'Bills', icon: '🧾' }, { name: 'Salary', icon: '💰' }, { name: 'Travel', icon: '✈️' }, { name: 'Health', icon: '💊' }];
             const form = ref({ type: 'expense', amount: '', category: 'Food', account: 'Cash', date: '', note: '' });
-
-            // Account Filter State (Default to current month)
             const accFilterDate = ref(new Date().toISOString().slice(0, 7));
 
-            // Calendar Computed
+            // Computed
+            const displayUid = computed(() => userId.value ? userId.value.substring(0,6) : 'OFFLINE');
             const currentYearMonthStr = computed(() => currentDate.value.toISOString().slice(0, 7));
             const startDayOfWeek = computed(() => { const d = new Date(currentDate.value); d.setDate(1); return d.getDay(); });
             const daysInMonth = computed(() => {
@@ -323,26 +246,9 @@
                     dateStr: new Date(year, month, i + 1).toISOString().split('T')[0] 
                 }));
             });
-
-            // Transaction Filter
             const filteredTransactions = computed(() => transactions.value.filter(t => t.date === selectedDate.value));
             const dayTotal = computed(() => filteredTransactions.value.reduce((s, t) => t.type === 'expense' ? s - t.amount : s + t.amount, 0));
-
-            // Net Worth Filtered
-            const netWorthFiltered = computed(() => {
-                const targetMonth = accFilterDate.value; // e.g., "2026-01"
-                return transactions.value
-                    .filter(t => t.date.startsWith(targetMonth))
-                    .reduce((sum, t) => t.type === 'income' ? sum + t.amount : sum - t.amount, 0);
-            });
-
-            // Account Balance (Real-time, All-time)
-            const getAccountBalance = (accName) => {
-                return transactions.value
-                    .filter(t => t.account === accName)
-                    .reduce((acc, t) => t.type === 'income' ? acc + t.amount : acc - t.amount, 0);
-            };
-
+            const netWorthFiltered = computed(() => transactions.value.filter(t => t.date.startsWith(accFilterDate.value)).reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0));
             const categoryStats = computed(() => {
                 const s = {};
                 transactions.value.filter(t => t.type === 'expense').forEach(t => { s[t.category] = (s[t.category] || 0) + t.amount; });
@@ -351,58 +257,98 @@
             });
 
             // Methods
-            const dayClass = (day) => {
-                if (selectedDate.value === day.dateStr) return 'bg-[#FF9900] text-black border-black shadow-[2px_2px_0px_black]';
-                if (day.dateStr === new Date().toISOString().split('T')[0]) return 'border-[#FF9900] text-[#FF9900]';
-                return 'bg-[#262626] text-gray-300';
-            };
+            const closeModal = () => showModal.value = false; // 定義 closeModal
 
-            const onMonthPick = (e) => {
-                const [y, m] = e.target.value.split('-');
-                currentDate.value = new Date(y, m - 1, 1);
-            };
-
-            const initAuth = () => auth.onAuthStateChanged(async user => { if (user) { userId.value = user.uid; syncStatusColor.value = 'bg-green-500'; loadData(); loadFixedItems(); } else { await auth.signInAnonymously(); } });
-            const loadData = () => db.collection('users').doc(userId.value).collection('transactions').orderBy('date', 'desc').onSnapshot(s => transactions.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
-            const loadFixedItems = () => db.collection('users').doc(userId.value).collection('fixedItems').onSnapshot(s => fixedItems.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
-            
             const saveTransaction = async () => {
                 if (!form.value.amount || !userId.value) return;
                 const d = { ...form.value };
-                try { isEditing.value ? await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).update(d) : await db.collection('users').doc(userId.value).collection('transactions').add(d); closeModal(); } catch (e) { alert(e.message); }
+                try {
+                    if (isEditing.value) {
+                        await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).update(d);
+                    } else {
+                        await db.collection('users').doc(userId.value).collection('transactions').add(d);
+                    }
+                    closeModal(); // 在這裡調用，確保成功後關閉
+                } catch (e) {
+                    alert("Error: " + e.message);
+                }
             };
             
-            const deleteTransaction = async () => { if (confirm("Delete?")) { await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).delete(); closeModal(); } };
-            const addFixedItem = async () => { if (!newFixed.value.amount) return; await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value); newFixed.value.amount = ''; };
-            const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
-            const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
+            const deleteTransaction = async () => { 
+                if (confirm("Delete?")) { 
+                    await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).delete(); 
+                    closeModal(); 
+                } 
+            };
+
+            const addFixedItem = async () => { 
+                if (!newFixed.value.amount) return; 
+                await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value); 
+                newFixed.value.amount = ''; 
+                newFixed.value.note = ''; 
+                newFixed.value.startMonth = ''; // 重置
+            };
             
+            const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
+            
+            // Charts Logic
             let chart = null;
             const renderChart = () => {
                 const ctx = document.getElementById('expenseChart');
                 if (!ctx) return;
                 if (chart) chart.destroy();
+                
+                // 防止沒數據報錯
+                const labels = categoryStats.value.map(s => s.name);
+                const data = categoryStats.value.map(s => s.total);
+                
                 chart = new Chart(ctx, {
                     type: 'doughnut',
-                    data: { labels: categoryStats.value.map(s => s.name), datasets: [{ data: categoryStats.value.map(s => s.total), backgroundColor: chartColors, borderWidth: 0 }] },
+                    data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%', layout: { padding: 20 } }
                 });
             };
 
+            const initAuth = () => auth.onAuthStateChanged(async user => { 
+                if (user) { 
+                    userId.value = user.uid; 
+                    syncStatusColor.value = 'bg-green-500'; 
+                    loadData(); 
+                    loadFixedItems(); 
+                } else { 
+                    await auth.signInAnonymously(); 
+                } 
+            });
+            const loadData = () => db.collection('users').doc(userId.value).collection('transactions').orderBy('date', 'desc').onSnapshot(s => transactions.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+            const loadFixedItems = () => db.collection('users').doc(userId.value).collection('fixedItems').onSnapshot(s => fixedItems.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+            
+            const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
+
+            // Watch View Change for Charts
+            watch(currentView, async (newVal) => {
+                if (newVal === 'charts') {
+                    await nextTick(); // 等待 DOM 更新
+                    setTimeout(renderChart, 100); // 雙重保險
+                }
+            });
+
             onMounted(initAuth);
-            watch(currentView, v => v === 'charts' && setTimeout(renderChart, 200));
 
             return {
-                currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, netWorthFiltered, categoryStats, syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, accFilterDate, fixedItems, newFixed, currentYearMonthStr,
+                currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, netWorthFiltered, categoryStats, syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, accFilterDate, fixedItems, newFixed, currentYearMonthStr, displayUid,
                 changeMonth: (o) => { const d = new Date(currentDate.value); d.setMonth(d.getMonth() + o); currentDate.value = d; },
                 selectDate: (d) => selectedDate.value = d,
                 formatYearMonth: (d) => d.toLocaleString('default', { month: 'short', year: 'numeric' }),
                 getCategoryIcon: (n) => categories.find(c => c.name === n)?.icon || '📦',
-                getAccountBalance, onMonthPick,
+                getAccountBalance: (n) => transactions.value.filter(t => t.account === n).reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0),
+                onMonthPick: (e) => { const [y, m] = e.target.value.split('-'); currentDate.value = new Date(y, m - 1, 1); },
                 openAddModal: () => { isEditing.value = false; form.value = { type: 'expense', amount: '', category: 'Food', account: 'Cash', date: selectedDate.value, note: '' }; showModal.value = true; },
                 editTransaction: (t) => { isEditing.value = true; editingId.value = t.id; form.value = { ...t }; showModal.value = true; },
-                closeModal: () => showModal.value = false,
-                saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, dayClass, hasTransaction: (d) => transactions.value.some(t => t.date === d), exportJSON
+                closeModal, saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, dayClass: (d) => {
+                    if (selectedDate.value === d.dateStr) return 'bg-[#FF9900] text-black border-black shadow-[2px_2px_0px_black]';
+                    if (d.dateStr === new Date().toISOString().split('T')[0]) return 'border-[#FF9900] text-[#FF9900]';
+                    return 'bg-[#262626] text-gray-300';
+                }, hasTransaction: (d) => transactions.value.some(t => t.date === d), exportJSON
             };
         }
     }).mount('#app');
