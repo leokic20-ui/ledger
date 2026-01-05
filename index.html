@@ -25,9 +25,9 @@
         .hidden-date-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; z-index: 10; }
         input, select { background: #1a1a1a; color: white; border: 2px solid #333; outline: none; border-radius: 8px; }
         input:focus { border-color: #FF9900; }
-        .pop-enter-active, .pop-leave-active { transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .pop-enter-from { opacity: 0; transform: scale(0.95); }
-        .pop-leave-to { opacity: 0; transform: scale(1.05); display: none; }
+        
+        /* 移除 transition 避免 Chart.js 渲染衝突，改用 v-show 控制顯示 */
+        
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
         .safe-pt { padding-top: env(safe-area-inset-top); }
     </style>
@@ -47,134 +47,122 @@
 
     <!-- MAIN CONTENT -->
     <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-28 no-scrollbar relative">
-        <transition name="pop">
+        
+        <!-- VIEW 1: CALENDAR -->
+        <div v-show="currentView === 'calendar'" class="space-y-4">
+            <div class="neo-card p-2 flex justify-between items-center bg-[#262626] relative">
+                <button @click="changeMonth(-1)" class="p-2 text-[#FF9900] font-black text-lg z-20">◀</button>
+                <div class="relative flex-1 flex justify-center items-center h-full">
+                    <span class="font-black text-xl tracking-wide border-b-2 border-dashed border-[#FF9900] pb-1">{{ formatYearMonth(currentDate) }}</span>
+                    <input type="month" :value="currentYearMonthStr" @input="onMonthPick" class="hidden-date-input">
+                </div>
+                <button @click="changeMonth(1)" class="p-2 text-[#FF9900] font-black text-lg z-20">▶</button>
+            </div>
+            <div class="neo-card p-2 bg-[#1a1a1a]">
+                <div class="grid grid-cols-7 mb-2 text-center text-[10px] text-gray-500 font-bold"><div v-for="d in ['S','M','T','W','T','F','S']">{{ d }}</div></div>
+                <div class="grid grid-cols-7 gap-1">
+                    <div v-for="n in startDayOfWeek" :key="'empty'+n" class="h-10"></div>
+                    <div v-for="day in daysInMonth" :key="day.dateStr" @click="selectDate(day.dateStr)" class="h-10 relative flex items-center justify-center rounded-lg border border-transparent transition-all active:scale-90" :class="dayClass(day)">
+                        <span class="text-sm font-bold z-10">{{ day.dayNum }}</span>
+                        <div v-if="hasTransaction(day.dateStr)" class="absolute bottom-1 w-1 h-1 rounded-full bg-[#FF9900]"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="space-y-2">
+                <div class="flex justify-between items-end border-b border-[#333] pb-1 px-1">
+                    <span class="text-xs font-bold text-gray-400">{{ selectedDate }}</span>
+                    <span class="font-mono font-bold text-[#FF9900]">${{ dayTotal }}</span>
+                </div>
+                <div v-if="filteredTransactions.length === 0" class="text-center py-6 text-gray-600 text-xs">No records.</div>
+                <div v-for="t in filteredTransactions" :key="t.id" @click="editTransaction(t)" class="neo-card p-3 flex justify-between items-center active:scale-[0.98]">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl">{{ getCategoryIcon(t.category) }}</span>
+                        <div><div class="font-bold text-sm">{{ t.category }}</div><div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div></div>
+                    </div>
+                    <div :class="['font-mono font-bold', t.type === 'expense' ? 'text-white' : 'text-[#FF9900]']">{{ t.type === 'expense' ? '-' : '+' }}{{ t.amount }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: ACCOUNTS -->
+        <div v-show="currentView === 'accounts'" class="space-y-4">
+            <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
+                <div class="flex items-center gap-2 text-[#FF9900]">
+                    <span class="text-lg">📅</span>
+                    <span class="font-bold text-xs">{{ formatDateRange(filterRange) }}</span>
+                </div>
+                <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
+            </button>
+            <div class="neo-card p-5 bg-gradient-to-br from-[#FF9900] to-[#cc7a00] text-black border-none">
+                <div class="text-[10px] font-black uppercase tracking-widest opacity-80">Net Worth (Selected Period)</div>
+                <div class="text-4xl font-black font-mono mt-2">${{ netWorthFiltered }}</div>
+            </div>
+            <div class="grid gap-3">
+                 <div class="text-[10px] text-gray-500 font-bold uppercase ml-1">Current Wallet Balances (All Time)</div>
+                <div v-for="acc in accounts" :key="acc.name" class="neo-card p-4 flex justify-between items-center bg-[#262626]">
+                    <div class="flex items-center gap-3"><span class="text-2xl">{{ acc.icon }}</span><span class="font-bold">{{ acc.name }}</span></div>
+                    <span class="font-mono text-lg font-bold">${{ getAccountBalance(acc.name) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 3: CHARTS (修正版: 確保 Canvas 渲染) -->
+        <div v-show="currentView === 'charts'" class="space-y-4">
+            <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
+                <div class="flex items-center gap-2 text-[#FF9900]">
+                    <span class="text-lg">📅</span>
+                    <span class="font-bold text-xs">{{ formatDateRange(filterRange) }}</span>
+                </div>
+                <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
+            </button>
             
-            <!-- VIEW 1: CALENDAR -->
-            <div v-if="currentView === 'calendar'" key="cal" class="space-y-4">
-                <div class="neo-card p-2 flex justify-between items-center bg-[#262626] relative">
-                    <button @click="changeMonth(-1)" class="p-2 text-[#FF9900] font-black text-lg z-20">◀</button>
-                    <div class="relative flex-1 flex justify-center items-center h-full">
-                        <span class="font-black text-xl tracking-wide border-b-2 border-dashed border-[#FF9900] pb-1">{{ formatYearMonth(currentDate) }}</span>
-                        <input type="month" :value="currentYearMonthStr" @input="onMonthPick" class="hidden-date-input">
+            <div class="neo-card p-4 bg-[#262626] h-64 relative">
+                <!-- 直接放 Canvas，不再用 v-if 隱藏它 -->
+                anvas id="expenseChart"></canvas>
+            </div>
+            
+            <div class="space-y-2 pb-4">
+                <div v-for="(stat, index) in categoryStats" :key="stat.name" class="flex justify-between items-center p-2 border-b border-[#333]">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full shadow" :style="{backgroundColor: chartColors[index % chartColors.length]}"></div>
+                        <span class="text-xl">{{ stat.icon }}</span><span class="font-bold text-xs">{{ stat.name }}</span>
                     </div>
-                    <button @click="changeMonth(1)" class="p-2 text-[#FF9900] font-black text-lg z-20">▶</button>
-                </div>
-                <div class="neo-card p-2 bg-[#1a1a1a]">
-                    <div class="grid grid-cols-7 mb-2 text-center text-[10px] text-gray-500 font-bold"><div v-for="d in ['S','M','T','W','T','F','S']">{{ d }}</div></div>
-                    <div class="grid grid-cols-7 gap-1">
-                        <div v-for="n in startDayOfWeek" :key="'empty'+n" class="h-10"></div>
-                        <div v-for="day in daysInMonth" :key="day.dateStr" @click="selectDate(day.dateStr)" class="h-10 relative flex items-center justify-center rounded-lg border border-transparent transition-all active:scale-90" :class="dayClass(day)">
-                            <span class="text-sm font-bold z-10">{{ day.dayNum }}</span>
-                            <div v-if="hasTransaction(day.dateStr)" class="absolute bottom-1 w-1 h-1 rounded-full bg-[#FF9900]"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-end border-b border-[#333] pb-1 px-1">
-                        <span class="text-xs font-bold text-gray-400">{{ selectedDate }}</span>
-                        <span class="font-mono font-bold text-[#FF9900]">${{ dayTotal }}</span>
-                    </div>
-                    <div v-if="filteredTransactions.length === 0" class="text-center py-6 text-gray-600 text-xs">No records.</div>
-                    <div v-for="t in filteredTransactions" :key="t.id" @click="editTransaction(t)" class="neo-card p-3 flex justify-between items-center active:scale-[0.98]">
-                        <div class="flex items-center gap-3">
-                            <span class="text-xl">{{ getCategoryIcon(t.category) }}</span>
-                            <div><div class="font-bold text-sm">{{ t.category }}</div><div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div></div>
-                        </div>
-                        <div :class="['font-mono font-bold', t.type === 'expense' ? 'text-white' : 'text-[#FF9900]']">{{ t.type === 'expense' ? '-' : '+' }}{{ t.amount }}</div>
-                    </div>
+                    <div class="font-mono text-sm">${{ stat.total }} <span class="text-gray-500 text-[10px]">({{ stat.percent }}%)</span></div>
                 </div>
             </div>
+        </div>
 
-            <!-- VIEW 2: ACCOUNTS (With Flexible Date Filter) -->
-            <div v-else-if="currentView === 'accounts'" key="acc" class="space-y-4">
-                <!-- Date Filter Button -->
-                <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
-                    <div class="flex items-center gap-2 text-[#FF9900]">
-                        <span class="text-lg">📅</span>
-                        <span class="font-bold text-xs">{{ formatDateRange(filterRange) }}</span>
+        <!-- VIEW 4: SETTINGS -->
+        <div v-show="currentView === 'settings'" class="space-y-6">
+            <div class="neo-card p-4 bg-[#262626]">
+                <h3 class="text-[#FF9900] font-black text-sm mb-3 uppercase flex items-center gap-2"><span>🔄</span> Fixed Monthly Items</h3>
+                <div v-for="(item, idx) in fixedItems" :key="idx" class="flex justify-between items-center bg-[#1a1a1a] p-2 rounded mb-2 border border-[#333]">
+                    <div>
+                        <div class="font-bold text-xs">{{ item.category }} (${{ item.amount }})</div>
+                        <div class="text-[10px] text-gray-500">{{ item.startMonth }} ➝ {{ item.endMonth || 'Forever' }}</div>
                     </div>
-                    <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
-                </button>
-
-                <!-- Net Worth Card -->
-                <div class="neo-card p-5 bg-gradient-to-br from-[#FF9900] to-[#cc7a00] text-black border-none">
-                    <div class="text-[10px] font-black uppercase tracking-widest opacity-80">Net Worth (Selected Period)</div>
-                    <div class="text-4xl font-black font-mono mt-2">${{ netWorthFiltered }}</div>
+                    <button @click="removeFixedItem(idx)" class="text-red-500 font-bold px-2">×</button>
                 </div>
-
-                <div class="grid gap-3">
-                     <div class="text-[10px] text-gray-500 font-bold uppercase ml-1">Current Wallet Balances (All Time)</div>
-                    <div v-for="acc in accounts" :key="acc.name" class="neo-card p-4 flex justify-between items-center bg-[#262626]">
-                        <div class="flex items-center gap-3"><span class="text-2xl">{{ acc.icon }}</span><span class="font-bold">{{ acc.name }}</span></div>
-                        <span class="font-mono text-lg font-bold">${{ getAccountBalance(acc.name) }}</span>
+                <div class="mt-3 pt-3 border-t border-[#333] space-y-2">
+                    <div class="flex gap-2">
+                        <select v-model="newFixed.type" class="w-1/3 text-xs p-2"><option value="expense">Exp</option><option value="income">Inc</option></select>
+                        <input v-model.number="newFixed.amount" placeholder="$" class="w-2/3 text-xs p-2 font-mono">
                     </div>
-                </div>
-            </div>
-
-            <!-- VIEW 3: CHARTS (With Flexible Date Filter) -->
-            <div v-else-if="currentView === 'charts'" key="chart" class="space-y-4">
-                <!-- Date Filter Button (Shared) -->
-                <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
-                    <div class="flex items-center gap-2 text-[#FF9900]">
-                        <span class="text-lg">📅</span>
-                        <span class="font-bold text-xs">{{ formatDateRange(filterRange) }}</span>
+                    <div class="flex gap-2">
+                        <select v-model="newFixed.category" class="w-full text-xs p-2"><option v-for="c in categories" :value="c.name">{{ c.name }}</option></select>
                     </div>
-                    <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
-                </button>
-
-                <div class="neo-card p-4 bg-[#262626] h-64 relative">
-                    anvas id="expenseChart"></canvas>
-                </div>
-                <div class="space-y-2 pb-4">
-                    <div v-for="(stat, index) in categoryStats" :key="stat.name" class="flex justify-between items-center p-2 border-b border-[#333]">
-                        <div class="flex items-center gap-2">
-                            <div class="w-3 h-3 rounded-full shadow" :style="{backgroundColor: chartColors[index % chartColors.length]}"></div>
-                            <span class="text-xl">{{ stat.icon }}</span><span class="font-bold text-xs">{{ stat.name }}</span>
-                        </div>
-                        <div class="font-mono text-sm">${{ stat.total }} <span class="text-gray-500 text-[10px]">({{ stat.percent }}%)</span></div>
-                    </div>
+                    <div class="flex gap-2 items-center"><span class="text-[10px] text-gray-500 w-10">FROM</span><input v-model="newFixed.startMonth" type="month" class="flex-1 text-xs p-2 font-mono"></div>
+                    <div class="flex gap-2 items-center"><span class="text-[10px] text-gray-500 w-10">TO</span><input v-model="newFixed.endMonth" type="month" class="flex-1 text-xs p-2 font-mono"></div>
+                    <input v-model="newFixed.note" placeholder="Note (Optional)" class="w-full text-xs p-2">
+                    <button @click="addFixedItem" class="sticker-btn bg-[#333] text-white w-full py-2 text-xs rounded mt-2">ADD RULE</button>
                 </div>
             </div>
-
-            <!-- VIEW 4: SETTINGS (Smart Fixed Items) -->
-            <div v-else-if="currentView === 'settings'" key="set" class="space-y-6">
-                <div class="neo-card p-4 bg-[#262626]">
-                    <h3 class="text-[#FF9900] font-black text-sm mb-3 uppercase flex items-center gap-2"><span>🔄</span> Fixed Monthly Items</h3>
-                    <div v-for="(item, idx) in fixedItems" :key="idx" class="flex justify-between items-center bg-[#1a1a1a] p-2 rounded mb-2 border border-[#333]">
-                        <div>
-                            <div class="font-bold text-xs">{{ item.category }} (${{ item.amount }})</div>
-                            <div class="text-[10px] text-gray-500">
-                                {{ item.startMonth }} ➝ {{ item.endMonth || 'Forever' }}
-                            </div>
-                        </div>
-                        <button @click="removeFixedItem(idx)" class="text-red-500 font-bold px-2">×</button>
-                    </div>
-                    <div class="mt-3 pt-3 border-t border-[#333] space-y-2">
-                        <div class="flex gap-2">
-                            <select v-model="newFixed.type" class="w-1/3 text-xs p-2"><option value="expense">Exp</option><option value="income">Inc</option></select>
-                            <input v-model.number="newFixed.amount" placeholder="$" class="w-2/3 text-xs p-2 font-mono">
-                        </div>
-                        <div class="flex gap-2">
-                            <select v-model="newFixed.category" class="w-full text-xs p-2"><option v-for="c in categories" :value="c.name">{{ c.name }}</option></select>
-                        </div>
-                        <div class="flex gap-2 items-center">
-                            <span class="text-[10px] text-gray-500 w-10">FROM</span>
-                            <input v-model="newFixed.startMonth" type="month" class="flex-1 text-xs p-2 font-mono">
-                        </div>
-                        <div class="flex gap-2 items-center">
-                            <span class="text-[10px] text-gray-500 w-10">TO</span>
-                            <input v-model="newFixed.endMonth" type="month" class="flex-1 text-xs p-2 font-mono">
-                        </div>
-                        <input v-model="newFixed.note" placeholder="Note (Optional)" class="w-full text-xs p-2">
-                        <button @click="addFixedItem" class="sticker-btn bg-[#333] text-white w-full py-2 text-xs rounded mt-2">ADD RULE</button>
-                    </div>
-                </div>
-                <div class="neo-card p-4 bg-[#262626]">
-                    <button @click="exportJSON" class="sticker-btn bg-[#333] text-white w-full py-3 rounded font-bold text-sm">EXPORT JSON BACKUP</button>
-                    <div class="text-[10px] text-gray-600 text-center mt-2 font-mono">UID: {{ displayUid }}</div>
-                </div>
+            <div class="neo-card p-4 bg-[#262626]">
+                <button @click="exportJSON" class="sticker-btn bg-[#333] text-white w-full py-3 rounded font-bold text-sm">EXPORT JSON BACKUP</button>
+                <div class="text-[10px] text-gray-600 text-center mt-2 font-mono">UID: {{ displayUid }}</div>
             </div>
-        </transition>
+        </div>
+
     </main>
 
     <!-- FAB -->
@@ -188,18 +176,17 @@
         </button>
     </nav>
 
-    <!-- DATE FILTER MODAL (NEW) -->
+    <!-- DATE FILTER MODAL (Updated Logic) -->
     <div v-if="showFilterModal" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center backdrop-blur-sm p-4">
         <div class="bg-[#1a1a1a] w-full max-w-sm rounded-xl border-2 border-[#FF9900] p-4 space-y-4 card-shadow">
             <h3 class="font-black text-lg text-[#FF9900]">SELECT DATE RANGE</h3>
-            <!-- Shortcuts -->
             <div class="grid grid-cols-2 gap-2">
                 <button @click="setFilterPreset('thisMonth')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">This Month</button>
                 <button @click="setFilterPreset('lastMonth')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">Last Month</button>
                 <button @click="setFilterPreset('thisYear')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">This Year</button>
-                <button @click="setFilterPreset('2025')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">2025</button>
+                <!-- Last Year Button -->
+                <button @click="setFilterPreset('lastYear')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">Last Year</button>
             </div>
-            <!-- Custom Range -->
             <div class="space-y-2 pt-2 border-t border-[#333]">
                 <div class="text-xs text-gray-500 font-bold">CUSTOM RANGE</div>
                 <div class="flex gap-2">
@@ -216,7 +203,6 @@
     <div v-if="showModal" class="fixed inset-0 bg-black/90 z-50 flex items-end justify-center backdrop-blur-sm safe-pb">
         <div @click="closeModal" class="absolute inset-0"></div>
         <div class="bg-[#1a1a1a] w-full max-w-md rounded-t-3xl border-t-4 border-[#FF9900] p-6 space-y-4 relative card-shadow mb-4 mx-2">
-            <!-- (Modal content same as before) -->
             <div class="flex justify-between items-center mb-2">
                 <h3 class="font-black text-xl italic">{{ isEditing ? 'EDIT' : 'NEW' }} ENTRY</h3>
                 <button @click="closeModal" class="text-2xl text-gray-500 w-8 h-8 flex items-center justify-center bg-[#262626] rounded-full">×</button>
@@ -265,7 +251,6 @@
 
     createApp({
         setup() {
-            // Core Data
             const currentView = ref('calendar');
             const currentDate = ref(new Date());
             const selectedDate = ref(new Date().toISOString().split('T')[0]);
@@ -277,7 +262,7 @@
             const editingId = ref(null);
             const fixedItems = ref([]);
             
-            // Filter Data (New)
+            // Filter Data
             const showFilterModal = ref(false);
             const today = new Date();
             const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -286,14 +271,11 @@
             const tempFilter = ref({ ...filterRange.value });
 
             const newFixed = ref({ type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' });
-            
-            // Constants
             const chartColors = ['#FF9900', '#00CED1', '#FF69B4', '#9370DB', '#4169E1', '#FFD700', '#32CD32', '#FF4500'];
             const accounts = ref([{ name: 'Bank', icon: '🏦' }, { name: 'Cash', icon: '💵' }, { name: 'Credit', icon: '💳' }, { name: 'Octopus', icon: '🐙' }]);
             const categories = [{ name: 'Food', icon: '🍔' }, { name: 'Transport', icon: '🚌' }, { name: 'Shopping', icon: '🛍️' }, { name: 'Ent.', icon: '🎬' }, { name: 'Bills', icon: '🧾' }, { name: 'Salary', icon: '💰' }, { name: 'Travel', icon: '✈️' }, { name: 'Health', icon: '💊' }];
             const form = ref({ type: 'expense', amount: '', category: 'Food', account: 'Cash', date: '', note: '' });
 
-            // Computed
             const displayUid = computed(() => userId.value ? userId.value.substring(0,6) : 'OFFLINE');
             const currentYearMonthStr = computed(() => currentDate.value.toISOString().slice(0, 7));
             const startDayOfWeek = computed(() => { const d = new Date(currentDate.value); d.setDate(1); return d.getDay(); });
@@ -306,13 +288,10 @@
             const filteredTransactions = computed(() => transactions.value.filter(t => t.date === selectedDate.value));
             const dayTotal = computed(() => filteredTransactions.value.reduce((s, t) => t.type === 'expense' ? s - t.amount : s + t.amount, 0));
             
-            // Smart Filter Logic
             const transactionsInFilterRange = computed(() => {
                 return transactions.value.filter(t => t.date >= filterRange.value.start && t.date <= filterRange.value.end);
             });
-            
             const netWorthFiltered = computed(() => transactionsInFilterRange.value.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0));
-            
             const categoryStats = computed(() => {
                 const s = {};
                 transactionsInFilterRange.value.filter(t => t.type === 'expense').forEach(t => { s[t.category] = (s[t.category] || 0) + t.amount; });
@@ -320,13 +299,12 @@
                 return Object.entries(s).map(([n, v]) => ({ name: n, total: v, icon: categories.find(c => c.name === n)?.icon || '?', percent: total ? Math.round(v/total*100) : 0 })).sort((a,b) => b.total - a.total);
             });
 
-            // Methods
             const closeModal = () => showModal.value = false;
             const formatDateRange = (r) => `${r.start} ➝ ${r.end}`;
-            
             const openFilterModal = () => { tempFilter.value = { ...filterRange.value }; showFilterModal.value = true; };
             const applyFilter = () => { filterRange.value = { ...tempFilter.value }; showFilterModal.value = false; };
             
+            // Updated Preset Logic (Includes Last Year)
             const setFilterPreset = (type) => {
                 const now = new Date();
                 let s, e;
@@ -339,23 +317,20 @@
                 } else if (type === 'thisYear') {
                     s = new Date(now.getFullYear(), 0, 1);
                     e = new Date(now.getFullYear(), 11, 31);
-                } else if (type === '2025') {
-                    s = new Date(2025, 0, 1);
-                    e = new Date(2025, 11, 31);
+                } else if (type === 'lastYear') {
+                    s = new Date(now.getFullYear() - 1, 0, 1);
+                    e = new Date(now.getFullYear() - 1, 11, 31);
                 }
-                // ISO String conversion
                 const toIso = (d) => { d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().split('T')[0]; };
                 tempFilter.value = { start: toIso(s), end: toIso(e) };
             };
 
-            // Fixed Items
             const addFixedItem = async () => { 
-                if (!newFixed.value.amount || !newFixed.value.startMonth) return alert("Start Month is required!"); 
+                if (!newFixed.value.amount || !newFixed.value.startMonth) return alert("Start Month required!"); 
                 await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value); 
                 newFixed.value = { type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' };
             };
 
-            // Common Methods (Same as before)
             const saveTransaction = async () => {
                 if (!form.value.amount || !userId.value) return;
                 const d = { ...form.value };
@@ -369,11 +344,11 @@
             const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
             const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
 
-            // Chart Logic
+            // Chart Logic (Enhanced)
             let chart = null;
             const renderChart = () => {
                 const ctx = document.getElementById('expenseChart');
-                if (!ctx) return;
+                if (!ctx) return; // Should not happen with v-show logic
                 if (chart) chart.destroy();
                 const labels = categoryStats.value.map(s => s.name);
                 const data = categoryStats.value.map(s => s.total);
@@ -390,16 +365,17 @@
 
             onMounted(initAuth);
             
-            // Watchers for Chart Updates
-            watch([currentView, filterRange], async ([view, range]) => {
-                if (view === 'charts') { await nextTick(); setTimeout(renderChart, 100); }
+            // Watch for View & Filter changes
+            watch([currentView, filterRange, transactions], async ([view, range]) => {
+                if (view === 'charts') { 
+                    await nextTick(); 
+                    setTimeout(renderChart, 100); 
+                }
             }, { deep: true });
 
             return {
                 currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, 
-                // Filter Exports
                 showFilterModal, filterRange, tempFilter, openFilterModal, applyFilter, setFilterPreset, formatDateRange, netWorthFiltered, categoryStats, transactionsInFilterRange,
-                // Core
                 syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid,
                 changeMonth: (o) => { const d = new Date(currentDate.value); d.setMonth(d.getMonth() + o); currentDate.value = d; },
                 selectDate: (d) => selectedDate.value = d,
