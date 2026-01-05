@@ -25,9 +25,6 @@
         .hidden-date-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; z-index: 10; }
         input, select { background: #1a1a1a; color: white; border: 2px solid #333; outline: none; border-radius: 8px; }
         input:focus { border-color: #FF9900; }
-        
-        /* 移除 transition 避免 Chart.js 渲染衝突，改用 v-show 控制顯示 */
-        
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
         .safe-pt { padding-top: env(safe-area-inset-top); }
     </style>
@@ -53,7 +50,7 @@
             <div class="neo-card p-2 flex justify-between items-center bg-[#262626] relative">
                 <button @click="changeMonth(-1)" class="p-2 text-[#FF9900] font-black text-lg z-20">◀</button>
                 <div class="relative flex-1 flex justify-center items-center h-full">
-                    <span class="font-black text-xl tracking-wide border-b-2 border-dashed border-[#FF9900] pb-1">{{ formatYearMonth(currentDate) }}</span>
+                    <span class="font-black text-xl tracking-wide border-b-2 border-dashed border-[#FF9900] pb-1">{{ formatMonthHeader(currentDate) }}</span>
                     <input type="month" :value="currentYearMonthStr" @input="onMonthPick" class="hidden-date-input">
                 </div>
                 <button @click="changeMonth(1)" class="p-2 text-[#FF9900] font-black text-lg z-20">▶</button>
@@ -70,7 +67,7 @@
             </div>
             <div class="space-y-2">
                 <div class="flex justify-between items-end border-b border-[#333] pb-1 px-1">
-                    <span class="text-xs font-bold text-gray-400">{{ selectedDate }}</span>
+                    <span class="text-xs font-bold text-gray-400">{{ formatDateFriendly(selectedDate) }}</span>
                     <span class="font-mono font-bold text-[#FF9900]">${{ dayTotal }}</span>
                 </div>
                 <div v-if="filteredTransactions.length === 0" class="text-center py-6 text-gray-600 text-xs">No records.</div>
@@ -106,7 +103,7 @@
             </div>
         </div>
 
-        <!-- VIEW 3: CHARTS (修正版: 確保 Canvas 渲染) -->
+        <!-- VIEW 3: CHARTS -->
         <div v-show="currentView === 'charts'" class="space-y-4">
             <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
                 <div class="flex items-center gap-2 text-[#FF9900]">
@@ -116,9 +113,8 @@
                 <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
             </button>
             
-            <div class="neo-card p-4 bg-[#262626] h-64 relative">
-                <!-- 直接放 Canvas，不再用 v-if 隱藏它 -->
-                anvas id="expenseChart"></canvas>
+            <div class="neo-card p-4 bg-[#262626] h-72 relative flex items-center justify-center">
+                <canvas id="expenseChart" class="w-full h-full"></canvas>
             </div>
             
             <div class="space-y-2 pb-4">
@@ -176,7 +172,7 @@
         </button>
     </nav>
 
-    <!-- DATE FILTER MODAL (Updated Logic) -->
+    <!-- DATE FILTER MODAL -->
     <div v-if="showFilterModal" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center backdrop-blur-sm p-4">
         <div class="bg-[#1a1a1a] w-full max-w-sm rounded-xl border-2 border-[#FF9900] p-4 space-y-4 card-shadow">
             <h3 class="font-black text-lg text-[#FF9900]">SELECT DATE RANGE</h3>
@@ -184,7 +180,6 @@
                 <button @click="setFilterPreset('thisMonth')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">This Month</button>
                 <button @click="setFilterPreset('lastMonth')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">Last Month</button>
                 <button @click="setFilterPreset('thisYear')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">This Year</button>
-                <!-- Last Year Button -->
                 <button @click="setFilterPreset('lastYear')" class="p-2 border border-[#333] rounded text-xs font-bold active:bg-[#333]">Last Year</button>
             </div>
             <div class="space-y-2 pt-2 border-t border-[#333]">
@@ -249,11 +244,24 @@
     const auth = firebase.auth();
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
+    // Helper functions moved outside setup to avoid scope issues
+    const pad = (n) => String(n).padStart(2, '0');
+    
+    // Manual date formatter that ignores timezones completely
+    const getLocalISODate = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    };
+
+    const toIsoDate = (dateObj) => {
+        return `${dateObj.getFullYear()}-${pad(dateObj.getMonth()+1)}-${pad(dateObj.getDate())}`;
+    };
+
     createApp({
         setup() {
             const currentView = ref('calendar');
-            const currentDate = ref(new Date());
-            const selectedDate = ref(new Date().toISOString().split('T')[0]);
+            const currentDate = ref(new Date()); 
+            const selectedDate = ref(getLocalISODate());
             const transactions = ref([]);
             const userId = ref(null);
             const syncStatusColor = ref('bg-red-500');
@@ -262,12 +270,11 @@
             const editingId = ref(null);
             const fixedItems = ref([]);
             
-            // Filter Data
-            const showFilterModal = ref(false);
+            // Filter Setup
             const today = new Date();
-            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
-            const filterRange = ref({ start: startOfMonth, end: endOfMonth });
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            const filterRange = ref({ start: toIsoDate(startOfMonth), end: toIsoDate(endOfMonth) });
             const tempFilter = ref({ ...filterRange.value });
 
             const newFixed = ref({ type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' });
@@ -277,119 +284,270 @@
             const form = ref({ type: 'expense', amount: '', category: 'Food', account: 'Cash', date: '', note: '' });
 
             const displayUid = computed(() => userId.value ? userId.value.substring(0,6) : 'OFFLINE');
-            const currentYearMonthStr = computed(() => currentDate.value.toISOString().slice(0, 7));
-            const startDayOfWeek = computed(() => { const d = new Date(currentDate.value); d.setDate(1); return d.getDay(); });
+            const currentYearMonthStr = computed(() => `${currentDate.value.getFullYear()}-${pad(currentDate.value.getMonth()+1)}`);
+            
+            const startDayOfWeek = computed(() => { 
+                const d = new Date(currentDate.value); 
+                d.setDate(1); 
+                return d.getDay(); 
+            });
+            
             const daysInMonth = computed(() => {
                 const year = currentDate.value.getFullYear();
-                const month = currentDate.value.getMonth();
+                const month = currentDate.value.getMonth(); // 0-indexed
                 const days = new Date(year, month + 1, 0).getDate();
-                return Array.from({length: days}, (_, i) => ({ dayNum: i + 1, dateStr: new Date(year, month, i + 1).toISOString().split('T')[0] }));
+                
+                const result = [];
+                for (let i = 1; i <= days; i++) {
+                    result.push({ 
+                        dayNum: i, 
+                        dateStr: `${year}-${pad(month+1)}-${pad(i)}` 
+                    });
+                }
+                return result;
             });
+
             const filteredTransactions = computed(() => transactions.value.filter(t => t.date === selectedDate.value));
-            const dayTotal = computed(() => filteredTransactions.value.reduce((s, t) => t.type === 'expense' ? s - t.amount : s + t.amount, 0));
             
+            const dayTotal = computed(() => {
+                return filteredTransactions.value.reduce((sum, t) => {
+                    return t.type === 'expense' ? sum - t.amount : sum + t.amount;
+                }, 0);
+            });
+
             const transactionsInFilterRange = computed(() => {
                 return transactions.value.filter(t => t.date >= filterRange.value.start && t.date <= filterRange.value.end);
             });
-            const netWorthFiltered = computed(() => transactionsInFilterRange.value.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0));
+
+            const netWorthFiltered = computed(() => {
+                return transactionsInFilterRange.value.reduce((sum, t) => {
+                    return t.type === 'income' ? sum + t.amount : sum - t.amount;
+                }, 0);
+            });
+
             const categoryStats = computed(() => {
                 const s = {};
-                transactionsInFilterRange.value.filter(t => t.type === 'expense').forEach(t => { s[t.category] = (s[t.category] || 0) + t.amount; });
+                transactionsInFilterRange.value.filter(t => t.type === 'expense').forEach(t => { 
+                    s[t.category] = (s[t.category] || 0) + t.amount; 
+                });
                 const total = Object.values(s).reduce((a, b) => a + b, 0);
-                return Object.entries(s).map(([n, v]) => ({ name: n, total: v, icon: categories.find(c => c.name === n)?.icon || '?', percent: total ? Math.round(v/total*100) : 0 })).sort((a,b) => b.total - a.total);
+                return Object.entries(s).map(([n, v]) => ({ 
+                    name: n, 
+                    total: v, 
+                    icon: categories.find(c => c.name === n)?.icon || '📦', 
+                    percent: total ? Math.round(v/total*100) : 0 
+                })).sort((a,b) => b.total - a.total);
             });
+
+            // Format Helpers
+            const formatMonthHeader = (d) => {
+                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                return `${months[d.getMonth()]} ${d.getFullYear()}`;
+            };
+
+            const formatDateFriendly = (isoStr) => {
+                if (!isoStr) return '';
+                const parts = isoStr.split('-');
+                if (parts.length !== 3) return isoStr;
+                const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                return `${months[parseInt(parts[1])-1]} ${parts[2]}, ${parts[0]}`;
+            };
 
             const closeModal = () => showModal.value = false;
             const formatDateRange = (r) => `${r.start} ➝ ${r.end}`;
-            const openFilterModal = () => { tempFilter.value = { ...filterRange.value }; showFilterModal.value = true; };
-            const applyFilter = () => { filterRange.value = { ...tempFilter.value }; showFilterModal.value = false; };
             
-            // Updated Preset Logic (Includes Last Year)
+            const openFilterModal = () => { 
+                tempFilter.value = { ...filterRange.value }; 
+                showFilterModal.value = true; 
+            };
+            
+            const applyFilter = () => { 
+                filterRange.value = { ...tempFilter.value }; 
+                showFilterModal.value = false; 
+            };
+            
             const setFilterPreset = (type) => {
                 const now = new Date();
+                const y = now.getFullYear();
+                const m = now.getMonth();
+                
                 let s, e;
                 if (type === 'thisMonth') {
-                    s = new Date(now.getFullYear(), now.getMonth(), 1);
-                    e = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                    s = new Date(y, m, 1);
+                    e = new Date(y, m + 1, 0);
                 } else if (type === 'lastMonth') {
-                    s = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                    e = new Date(now.getFullYear(), now.getMonth(), 0);
+                    s = new Date(y, m - 1, 1);
+                    e = new Date(y, m, 0);
                 } else if (type === 'thisYear') {
-                    s = new Date(now.getFullYear(), 0, 1);
-                    e = new Date(now.getFullYear(), 11, 31);
+                    s = new Date(y, 0, 1);
+                    e = new Date(y, 11, 31);
                 } else if (type === 'lastYear') {
-                    s = new Date(now.getFullYear() - 1, 0, 1);
-                    e = new Date(now.getFullYear() - 1, 11, 31);
+                    s = new Date(y - 1, 0, 1);
+                    e = new Date(y - 1, 11, 31);
                 }
-                const toIso = (d) => { d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().split('T')[0]; };
-                tempFilter.value = { start: toIso(s), end: toIso(e) };
+                tempFilter.value = { start: toIsoDate(s), end: toIsoDate(e) };
             };
 
+            // Actions
             const addFixedItem = async () => { 
-                if (!newFixed.value.amount || !newFixed.value.startMonth) return alert("Start Month required!"); 
+                if (!newFixed.value.amount || !newFixed.value.startMonth) {
+                    alert("Start Month is required!");
+                    return;
+                }
                 await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value); 
-                newFixed.value = { type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' };
+                newFixed.value = { type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' }; 
             };
 
             const saveTransaction = async () => {
                 if (!form.value.amount || !userId.value) return;
                 const d = { ...form.value };
                 try {
-                    if (isEditing.value) await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).update(d);
-                    else await db.collection('users').doc(userId.value).collection('transactions').add(d);
+                    if (isEditing.value) {
+                        await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).update(d);
+                    } else {
+                        await db.collection('users').doc(userId.value).collection('transactions').add(d);
+                    }
                     closeModal();
-                } catch (e) { alert(e.message); }
+                } catch (e) {
+                    alert("Error: " + e.message);
+                }
             };
-            const deleteTransaction = async () => { if (confirm("Delete?")) { await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).delete(); closeModal(); } };
-            const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
-            const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
 
-            // Chart Logic (Enhanced)
+            const deleteTransaction = async () => { 
+                if (confirm("Delete this transaction?")) { 
+                    await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).delete(); 
+                    closeModal(); 
+                } 
+            };
+            
+            const removeFixedItem = async (idx) => {
+                await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
+            };
+
+            const exportJSON = () => { 
+                const a = document.createElement("a"); 
+                a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); 
+                a.download = `ledger_backup.json`; 
+                a.click(); 
+            };
+
+            // Chart
             let chart = null;
             const renderChart = () => {
                 const ctx = document.getElementById('expenseChart');
-                if (!ctx) return; // Should not happen with v-show logic
-                if (chart) chart.destroy();
+                if (!ctx) return;
+                if (chart) { chart.destroy(); chart = null; }
+                
                 const labels = categoryStats.value.map(s => s.name);
                 const data = categoryStats.value.map(s => s.total);
+                
+                if (data.length === 0) return;
+
                 chart = new Chart(ctx, {
                     type: 'doughnut',
                     data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%', layout: { padding: 20 } }
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        plugins: { legend: { display: false } }, 
+                        cutout: '70%', 
+                        layout: { padding: 20 }
+                    }
                 });
             };
 
-            const initAuth = () => auth.onAuthStateChanged(async user => { if (user) { userId.value = user.uid; syncStatusColor.value = 'bg-green-500'; loadData(); loadFixedItems(); } else { await auth.signInAnonymously(); } });
-            const loadData = () => db.collection('users').doc(userId.value).collection('transactions').orderBy('date', 'desc').onSnapshot(s => transactions.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
-            const loadFixedItems = () => db.collection('users').doc(userId.value).collection('fixedItems').onSnapshot(s => fixedItems.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+            // Initialization
+            const initAuth = () => {
+                auth.onAuthStateChanged(async user => { 
+                    if (user) { 
+                        userId.value = user.uid; 
+                        syncStatusColor.value = 'bg-green-500'; 
+                        loadData(); 
+                        loadFixedItems(); 
+                    } else { 
+                        try {
+                            await auth.signInAnonymously();
+                        } catch (e) {
+                            console.error("Auth Failed", e);
+                        }
+                    } 
+                });
+            };
+
+            const loadData = () => {
+                db.collection('users').doc(userId.value).collection('transactions')
+                  .orderBy('date', 'desc')
+                  .onSnapshot(snapshot => {
+                      transactions.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                  });
+            };
+            
+            const loadFixedItems = () => {
+                db.collection('users').doc(userId.value).collection('fixedItems')
+                  .onSnapshot(snapshot => {
+                      fixedItems.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                  });
+            };
 
             onMounted(initAuth);
-            
-            // Watch for View & Filter changes
-            watch([currentView, filterRange, transactions], async ([view, range]) => {
+
+            watch([currentView, filterRange, transactions], async ([view]) => { 
                 if (view === 'charts') { 
                     await nextTick(); 
-                    setTimeout(renderChart, 100); 
-                }
+                    setTimeout(renderChart, 200); 
+                } 
             }, { deep: true });
+            
+            watch(selectedDate, (newVal) => { 
+                if (!showModal.value) form.value.date = newVal; 
+            });
 
             return {
                 currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, 
                 showFilterModal, filterRange, tempFilter, openFilterModal, applyFilter, setFilterPreset, formatDateRange, netWorthFiltered, categoryStats, transactionsInFilterRange,
                 syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid,
-                changeMonth: (o) => { const d = new Date(currentDate.value); d.setMonth(d.getMonth() + o); currentDate.value = d; },
+                formatMonthHeader, formatDateFriendly,
+                
+                changeMonth: (o) => { 
+                    const d = new Date(currentDate.value); 
+                    d.setMonth(d.getMonth() + o); 
+                    currentDate.value = d; 
+                },
                 selectDate: (d) => selectedDate.value = d,
-                formatYearMonth: (d) => d.toLocaleString('default', { month: 'short', year: 'numeric' }),
                 getCategoryIcon: (n) => categories.find(c => c.name === n)?.icon || '📦',
                 getAccountBalance: (n) => transactions.value.filter(t => t.account === n).reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0),
-                onMonthPick: (e) => { const [y, m] = e.target.value.split('-'); currentDate.value = new Date(y, m - 1, 1); },
-                openAddModal: () => { isEditing.value = false; form.value = { type: 'expense', amount: '', category: 'Food', account: 'Cash', date: selectedDate.value, note: '' }; showModal.value = true; },
-                editTransaction: (t) => { isEditing.value = true; editingId.value = t.id; form.value = { ...t }; showModal.value = true; },
-                closeModal, saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, dayClass: (d) => {
+                onMonthPick: (e) => { 
+                    const [y, m] = e.target.value.split('-'); 
+                    currentDate.value = new Date(y, m - 1, 1); 
+                },
+                
+                openAddModal: () => { 
+                    isEditing.value = false; 
+                    form.value = { 
+                        type: 'expense', amount: '', category: 'Food', account: 'Cash', 
+                        date: selectedDate.value, 
+                        note: '' 
+                    }; 
+                    showModal.value = true; 
+                },
+                
+                editTransaction: (t) => { 
+                    isEditing.value = true; 
+                    editingId.value = t.id; 
+                    form.value = { ...t }; 
+                    showModal.value = true; 
+                },
+                
+                closeModal, saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, 
+                
+                dayClass: (d) => {
                     if (selectedDate.value === d.dateStr) return 'bg-[#FF9900] text-black border-black shadow-[2px_2px_0px_black]';
-                    if (d.dateStr === new Date().toISOString().split('T')[0]) return 'border-[#FF9900] text-[#FF9900]';
+                    if (d.dateStr === getLocalISODate()) return 'border-[#FF9900] text-[#FF9900]';
                     return 'bg-[#262626] text-gray-300';
-                }, hasTransaction: (d) => transactions.value.some(t => t.date === d), exportJSON
+                }, 
+                
+                hasTransaction: (d) => transactions.value.some(t => t.date === d), 
+                exportJSON
             };
         }
     }).mount('#app');
