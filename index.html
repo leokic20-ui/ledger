@@ -107,7 +107,7 @@
                 </div>
             </div>
 
-            <!-- VIEW 3: CHARTS -->
+            <!-- VIEW 3: CHARTS (自動生成版) -->
             <div v-else-if="currentView === 'charts'" key="chart" class="space-y-4">
                 <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
                     <div class="flex items-center gap-2 text-[#FF9900]">
@@ -268,13 +268,11 @@
             const fixedItems = ref([]);
             const chartRef = ref(null);
             
-            // Filter Data (初始化時就設定好預設範圍)
+            // Filter Data
             const showFilterModal = ref(false);
             const today = new Date();
             const startOfMonth = getHKDate(new Date(today.getFullYear(), today.getMonth(), 1));
             const endOfMonth = getHKDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
-            
-            // 確保 filterRange 初始化就有值
             const filterRange = ref({ start: startOfMonth, end: endOfMonth });
             const tempFilter = ref({ ...filterRange.value });
 
@@ -296,14 +294,10 @@
             const filteredTransactions = computed(() => transactions.value.filter(t => t.date === selectedDate.value));
             const dayTotal = computed(() => filteredTransactions.value.reduce((s, t) => t.type === 'expense' ? s - t.amount : s + t.amount, 0));
             
-            // 這是核心邏輯，自動根據 Filter 過濾資料
             const transactionsInFilterRange = computed(() => {
-                if (!transactions.value.length) return [];
                 return transactions.value.filter(t => t.date >= filterRange.value.start && t.date <= filterRange.value.end);
             });
             const netWorthFiltered = computed(() => transactionsInFilterRange.value.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0));
-            
-            // 這裡確保 categoryStats 是響應式的，只要 transactionsInFilterRange 一變，它就自動更新
             const categoryStats = computed(() => {
                 const s = {};
                 transactionsInFilterRange.value.filter(t => t.type === 'expense').forEach(t => { s[t.category] = (s[t.category] || 0) + t.amount; });
@@ -332,7 +326,10 @@
                     s = new Date(now.getFullYear() - 1, 0, 1);
                     e = new Date(now.getFullYear() - 1, 11, 31);
                 }
-                tempFilter.value = { start: getHKDate(s), end: getHKDate(e) };
+                const newRange = { start: getHKDate(s), end: getHKDate(e) };
+                tempFilter.value = newRange;
+                // 新增：如果是在主畫面調用（非Modal內），直接應用
+                return newRange;
             };
 
             const addFixedItem = async () => { 
@@ -356,16 +353,11 @@
 
             let chart = null;
             const renderChart = () => {
-                if (categoryStats.value.length === 0) {
-                    if (chart) chart.destroy();
-                    return;
-                }
+                if (categoryStats.value.length === 0) { if (chart) chart.destroy(); return; }
                 if (!chartRef.value) return; 
-                
                 if (chart) chart.destroy();
                 const labels = categoryStats.value.map(s => s.name);
                 const data = categoryStats.value.map(s => s.total);
-                
                 chart = new Chart(chartRef.value, {
                     type: 'doughnut',
                     data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
@@ -379,15 +371,24 @@
 
             onMounted(initAuth);
             
-            // Watchers 優化：當交易數據載入完成，如果正好在圖表頁面，也自動重繪
-            watch([currentView, filterRange, transactions], async () => {
-                if (currentView.value === 'charts') {
-                    // 強制重算 Computed Property
+            // 核心修正：監聽 currentView 變化
+            watch(currentView, async (newView) => {
+                if (newView === 'charts') {
+                    // 1. 自動重置為本月
+                    const thisMonthRange = setFilterPreset('thisMonth');
+                    filterRange.value = thisMonthRange;
+                    
+                    // 2. 強制等待 DOM 更新後立即畫圖
                     await nextTick();
-                    // 確保數據已經準備好
-                    if (transactions.value.length > 0) {
-                        setTimeout(renderChart, 150);
-                    }
+                    setTimeout(renderChart, 150);
+                }
+            });
+            
+            // 監聽 Filter 變化也要重畫
+            watch([filterRange, transactions], async () => {
+                if (currentView.value === 'charts') {
+                    await nextTick();
+                    setTimeout(renderChart, 150);
                 }
             }, { deep: true });
 
@@ -401,20 +402,11 @@
                 getCategoryIcon: (n) => categories.find(c => c.name === n)?.icon || '📦',
                 getAccountBalance: (n) => transactions.value.filter(t => t.account === n).reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0),
                 onMonthPick: (e) => { const [y, m] = e.target.value.split('-'); currentDate.value = new Date(y, m - 1, 1); },
-                
                 openAddModal: () => { 
                     isEditing.value = false; 
-                    form.value = { 
-                        type: 'expense', 
-                        amount: '', 
-                        category: 'Food', 
-                        account: 'Cash', 
-                        date: selectedDate.value, 
-                        note: '' 
-                    }; 
+                    form.value = { type: 'expense', amount: '', category: 'Food', account: 'Cash', date: selectedDate.value, note: '' }; 
                     showModal.value = true; 
                 },
-                
                 editTransaction: (t) => { isEditing.value = true; editingId.value = t.id; form.value = { ...t }; showModal.value = true; },
                 closeModal, saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, dayClass: (d) => {
                     if (selectedDate.value === d.dateStr) return 'bg-[#FF9900] text-black border-black shadow-[2px_2px_0px_black]';
