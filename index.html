@@ -65,7 +65,7 @@
                         <div v-for="n in startDayOfWeek" :key="'empty'+n" class="h-10"></div>
                         <div v-for="day in daysInMonth" :key="day.dateStr" @click="selectDate(day.dateStr)" class="h-10 relative flex items-center justify-center rounded-lg border border-transparent transition-all active:scale-90" :class="dayClass(day)">
                             <span class="text-sm font-bold z-10">{{ day.dayNum }}</span>
-                            <!-- 橙色點：根據 transactions 數據判斷，而不是選中狀態 -->
+                            <!-- 橙點邏輯修復：只看資料庫的 date -->
                             <div v-if="hasTransaction(day.dateStr)" class="absolute bottom-1 w-1 h-1 rounded-full bg-[#FF9900]"></div>
                         </div>
                     </div>
@@ -108,7 +108,7 @@
                 </div>
             </div>
 
-            <!-- VIEW 3: CHARTS (Reverted to reliable v-if logic) -->
+            <!-- VIEW 3: CHARTS (修復版) -->
             <div v-else-if="currentView === 'charts'" key="chart" class="space-y-4">
                 <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
                     <div class="flex items-center gap-2 text-[#FF9900]">
@@ -118,8 +118,11 @@
                     <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
                 </button>
                 
-                <div class="neo-card p-4 bg-[#262626] h-64 relative">
-                    <canvas id="expenseChart"></canvas>
+                <div class="neo-card p-4 bg-[#262626] h-64 relative flex items-center justify-center">
+                    <!-- 如果沒有數據，顯示提示，避免 Canvas 崩潰 -->
+                    <div v-if="categoryStats.length === 0" class="text-gray-500 font-bold text-sm">NO DATA FOR THIS PERIOD</div>
+                    <!-- 使用 ref 替代 id，確保 Vue 能抓到正確元素 -->
+                    <canvas v-else ref="chartRef"></canvas>
                 </div>
                 
                 <div class="space-y-2 pb-4">
@@ -249,8 +252,8 @@
     const auth = firebase.auth();
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
-    // Timezone Helper: Fixes the off-by-one day error
-    const toLocalISO = (d) => {
+    // 時區修復函數：獲取當地的 YYYY-MM-DD
+    const getHKDate = (d = new Date()) => {
         const offset = d.getTimezoneOffset() * 60000;
         return new Date(d.getTime() - offset).toISOString().split('T')[0];
     };
@@ -259,7 +262,7 @@
         setup() {
             const currentView = ref('calendar');
             const currentDate = ref(new Date());
-            const selectedDate = ref(toLocalISO(new Date())); // Fix default selection
+            const selectedDate = ref(getHKDate()); // 修正：預設選中今天(HKT)
             const transactions = ref([]);
             const userId = ref(null);
             const syncStatusColor = ref('bg-red-500');
@@ -267,12 +270,14 @@
             const isEditing = ref(false);
             const editingId = ref(null);
             const fixedItems = ref([]);
+            const chartRef = ref(null); // 新增：Canvas 引用
             
             // Filter Data
             const showFilterModal = ref(false);
             const today = new Date();
-            const startOfMonth = toLocalISO(new Date(today.getFullYear(), today.getMonth(), 1));
-            const endOfMonth = toLocalISO(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+            // 修正：Filter 也使用本地時間
+            const startOfMonth = getHKDate(new Date(today.getFullYear(), today.getMonth(), 1));
+            const endOfMonth = getHKDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
             const filterRange = ref({ start: startOfMonth, end: endOfMonth });
             const tempFilter = ref({ ...filterRange.value });
 
@@ -283,13 +288,13 @@
             const form = ref({ type: 'expense', amount: '', category: 'Food', account: 'Cash', date: '', note: '' });
 
             const displayUid = computed(() => userId.value ? userId.value.substring(0,6) : 'OFFLINE');
-            const currentYearMonthStr = computed(() => toLocalISO(currentDate.value).slice(0, 7));
+            const currentYearMonthStr = computed(() => getHKDate(currentDate.value).slice(0, 7));
             const startDayOfWeek = computed(() => { const d = new Date(currentDate.value); d.setDate(1); return d.getDay(); });
             const daysInMonth = computed(() => {
                 const year = currentDate.value.getFullYear();
                 const month = currentDate.value.getMonth();
                 const days = new Date(year, month + 1, 0).getDate();
-                return Array.from({length: days}, (_, i) => ({ dayNum: i + 1, dateStr: toLocalISO(new Date(year, month, i + 1)) }));
+                return Array.from({length: days}, (_, i) => ({ dayNum: i + 1, dateStr: getHKDate(new Date(year, month, i + 1)) }));
             });
             const filteredTransactions = computed(() => transactions.value.filter(t => t.date === selectedDate.value));
             const dayTotal = computed(() => filteredTransactions.value.reduce((s, t) => t.type === 'expense' ? s - t.amount : s + t.amount, 0));
@@ -326,7 +331,7 @@
                     s = new Date(now.getFullYear() - 1, 0, 1);
                     e = new Date(now.getFullYear() - 1, 11, 31);
                 }
-                tempFilter.value = { start: toLocalISO(s), end: toLocalISO(e) };
+                tempFilter.value = { start: getHKDate(s), end: getHKDate(e) };
             };
 
             const addFixedItem = async () => { 
@@ -348,15 +353,23 @@
             const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
             const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
 
-            // Chart Logic - Reverted to v2.2 robust style
+            // Chart Logic - 更安全，使用 ref
             let chart = null;
             const renderChart = () => {
-                const ctx = document.getElementById('expenseChart');
-                if (!ctx) return;
+                // 如果沒有數據，直接退出，由 HTML 顯示 "NO DATA"
+                if (categoryStats.value.length === 0) {
+                    if (chart) chart.destroy();
+                    return;
+                }
+                
+                // 使用 Vue ref 獲取元素，比 document.getElementById 更可靠
+                if (!chartRef.value) return; 
+                
                 if (chart) chart.destroy();
                 const labels = categoryStats.value.map(s => s.name);
                 const data = categoryStats.value.map(s => s.total);
-                chart = new Chart(ctx, {
+                
+                chart = new Chart(chartRef.value, {
                     type: 'doughnut',
                     data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%', layout: { padding: 20 } }
@@ -370,14 +383,7 @@
             onMounted(initAuth);
             
             // Watcher to handle Chart rendering safely
-            watch(currentView, async (newVal) => {
-                if (newVal === 'charts') {
-                    await nextTick();
-                    setTimeout(renderChart, 150); // Small delay to ensure DOM is ready
-                }
-            });
-            // Also update chart if filter changes while in chart view
-            watch(filterRange, async () => {
+            watch([currentView, filterRange, transactions], async () => {
                 if (currentView.value === 'charts') {
                     await nextTick();
                     setTimeout(renderChart, 150);
@@ -387,7 +393,7 @@
             return {
                 currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, 
                 showFilterModal, filterRange, tempFilter, openFilterModal, applyFilter, setFilterPreset, formatDateRange, netWorthFiltered, categoryStats, transactionsInFilterRange,
-                syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid,
+                syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid, chartRef,
                 changeMonth: (o) => { const d = new Date(currentDate.value); d.setMonth(d.getMonth() + o); currentDate.value = d; },
                 selectDate: (d) => selectedDate.value = d,
                 formatYearMonth: (d) => d.toLocaleString('default', { month: 'short', year: 'numeric' }),
@@ -395,7 +401,7 @@
                 getAccountBalance: (n) => transactions.value.filter(t => t.account === n).reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0),
                 onMonthPick: (e) => { const [y, m] = e.target.value.split('-'); currentDate.value = new Date(y, m - 1, 1); },
                 
-                // Fix: Initialize form with currently selected date from Calendar
+                // 修正：打開 Modal 時，使用 selectedDate (已修正為本地時間)
                 openAddModal: () => { 
                     isEditing.value = false; 
                     form.value = { 
@@ -403,7 +409,7 @@
                         amount: '', 
                         category: 'Food', 
                         account: 'Cash', 
-                        date: selectedDate.value, // This now uses the correct local date string
+                        date: selectedDate.value, 
                         note: '' 
                     }; 
                     showModal.value = true; 
@@ -412,9 +418,9 @@
                 editTransaction: (t) => { isEditing.value = true; editingId.value = t.id; form.value = { ...t }; showModal.value = true; },
                 closeModal, saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, dayClass: (d) => {
                     if (selectedDate.value === d.dateStr) return 'bg-[#FF9900] text-black border-black shadow-[2px_2px_0px_black]';
-                    if (d.dateStr === toLocalISO(new Date())) return 'border-[#FF9900] text-[#FF9900]';
+                    if (d.dateStr === getHKDate()) return 'border-[#FF9900] text-[#FF9900]';
                     return 'bg-[#262626] text-gray-300';
-                }, hasTransaction: (d) => transactions.value.some(t => t.date === d), exportJSON, toLocalISO
+                }, hasTransaction: (d) => transactions.value.some(t => t.date === d), exportJSON, getHKDate
             };
         }
     }).mount('#app');
