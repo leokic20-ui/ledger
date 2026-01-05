@@ -107,7 +107,7 @@
                 </div>
             </div>
 
-            <!-- VIEW 3: CHARTS (自動生成版) -->
+            <!-- VIEW 3: CHARTS (FINAL FIX) -->
             <div v-else-if="currentView === 'charts'" key="chart" class="space-y-4">
                 <button @click="openFilterModal" class="w-full neo-card p-3 flex justify-between items-center bg-[#262626] active:scale-[0.98]">
                     <div class="flex items-center gap-2 text-[#FF9900]">
@@ -117,9 +117,22 @@
                     <div class="text-[10px] bg-[#333] px-2 py-1 rounded border border-gray-600">FILTER</div>
                 </button>
                 
-                <div class="neo-card p-4 bg-[#262626] h-64 relative flex items-center justify-center">
-                    <div v-if="categoryStats.length === 0" class="text-gray-500 font-bold text-sm">NO DATA FOR THIS PERIOD</div>
-                    <canvas v-else ref="chartRef"></canvas>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="neo-card p-2 bg-[#262626] flex flex-col items-center justify-center">
+                        <span class="text-[9px] text-gray-500 font-bold uppercase">Total Expense</span>
+                        <span class="text-lg font-mono font-black text-white">${{ totalExpenseFiltered }}</span>
+                    </div>
+                    <div class="neo-card p-2 bg-[#262626] flex flex-col items-center justify-center">
+                        <span class="text-[9px] text-gray-500 font-bold uppercase">Daily Average</span>
+                        <span class="text-lg font-mono font-black text-[#FF9900]">${{ dailyAverage }}</span>
+                    </div>
+                </div>
+
+                <div class="neo-card p-4 bg-[#262626] h-72 relative flex items-center justify-center">
+                    <!-- 使用 v-show 替代 v-if/v-else，確保元素永遠存在於 DOM 中 -->
+                    <div v-show="categoryStats.length === 0" class="text-gray-500 font-bold text-sm absolute">NO DATA FOR THIS PERIOD</div>
+                    <!-- Canvas 必須始終存在，否則 Chart.js 引用會斷裂 -->
+                    <canvas v-show="categoryStats.length > 0" ref="chartRef" class="w-full h-full"></canvas>
                 </div>
                 
                 <div class="space-y-2 pb-4">
@@ -128,7 +141,10 @@
                             <div class="w-3 h-3 rounded-full shadow" :style="{backgroundColor: chartColors[index % chartColors.length]}"></div>
                             <span class="text-xl">{{ stat.icon }}</span><span class="font-bold text-xs">{{ stat.name }}</span>
                         </div>
-                        <div class="font-mono text-sm">${{ stat.total }} <span class="text-gray-500 text-[10px]">({{ stat.percent }}%)</span></div>
+                        <div class="font-mono text-sm font-bold flex gap-2">
+                            <span>${{ stat.total }}</span>
+                            <span class="text-[#FF9900]">({{ stat.percent }}%)</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -298,11 +314,22 @@
                 return transactions.value.filter(t => t.date >= filterRange.value.start && t.date <= filterRange.value.end);
             });
             const netWorthFiltered = computed(() => transactionsInFilterRange.value.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0));
+            
             const categoryStats = computed(() => {
                 const s = {};
                 transactionsInFilterRange.value.filter(t => t.type === 'expense').forEach(t => { s[t.category] = (s[t.category] || 0) + t.amount; });
                 const total = Object.values(s).reduce((a, b) => a + b, 0);
                 return Object.entries(s).map(([n, v]) => ({ name: n, total: v, icon: categories.find(c => c.name === n)?.icon || '?', percent: total ? Math.round(v/total*100) : 0 })).sort((a,b) => b.total - a.total);
+            });
+            
+            const totalExpenseFiltered = computed(() => categoryStats.value.reduce((sum, item) => sum + item.total, 0));
+            const dailyAverage = computed(() => {
+                if (!filterRange.value.start || !filterRange.value.end) return 0;
+                const start = new Date(filterRange.value.start);
+                const end = new Date(filterRange.value.end);
+                const diffTime = Math.abs(end - start) + 86400000;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                return diffDays > 0 ? Math.round(totalExpenseFiltered.value / diffDays) : 0;
             });
 
             const closeModal = () => showModal.value = false;
@@ -328,7 +355,6 @@
                 }
                 const newRange = { start: getHKDate(s), end: getHKDate(e) };
                 tempFilter.value = newRange;
-                // 新增：如果是在主畫面調用（非Modal內），直接應用
                 return newRange;
             };
 
@@ -353,15 +379,33 @@
 
             let chart = null;
             const renderChart = () => {
-                if (categoryStats.value.length === 0) { if (chart) chart.destroy(); return; }
-                if (!chartRef.value) return; 
+                // 如果沒有數據，清空舊圖並退出
+                if (categoryStats.value.length === 0) { 
+                    if (chart) chart.destroy(); 
+                    return; 
+                }
+                
+                // 安全檢查：等待 Canvas 出現
+                if (!chartRef.value) {
+                    console.warn('Canvas not ready, retrying...');
+                    return; 
+                }
+                
                 if (chart) chart.destroy();
                 const labels = categoryStats.value.map(s => s.name);
                 const data = categoryStats.value.map(s => s.total);
+                
                 chart = new Chart(chartRef.value, {
                     type: 'doughnut',
                     data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%', layout: { padding: 20 } }
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        animation: { animateScale: true, animateRotate: true, duration: 1000 },
+                        plugins: { legend: { display: true, position: 'right', labels: { color: 'white', font: { size: 10 }, boxWidth: 10 } } }, 
+                        cutout: '65%', 
+                        layout: { padding: 10 } 
+                    }
                 });
             };
 
@@ -371,31 +415,26 @@
 
             onMounted(initAuth);
             
-            // 核心修正：監聽 currentView 變化
             watch(currentView, async (newView) => {
                 if (newView === 'charts') {
-                    // 1. 自動重置為本月
-                    const thisMonthRange = setFilterPreset('thisMonth');
-                    filterRange.value = thisMonthRange;
-                    
-                    // 2. 強制等待 DOM 更新後立即畫圖
+                    setFilterPreset('thisMonth');
+                    filterRange.value = setFilterPreset('thisMonth'); 
                     await nextTick();
-                    setTimeout(renderChart, 150);
+                    setTimeout(renderChart, 350); // 350ms delay is safe for animation
                 }
             });
             
-            // 監聽 Filter 變化也要重畫
             watch([filterRange, transactions], async () => {
                 if (currentView.value === 'charts') {
                     await nextTick();
-                    setTimeout(renderChart, 150);
+                    setTimeout(renderChart, 350);
                 }
             }, { deep: true });
 
             return {
                 currentView, currentDate, selectedDate, transactions, accounts, categories, daysInMonth, filteredTransactions, dayTotal, 
                 showFilterModal, filterRange, tempFilter, openFilterModal, applyFilter, setFilterPreset, formatDateRange, netWorthFiltered, categoryStats, transactionsInFilterRange,
-                syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid, chartRef,
+                syncStatusColor, userId, showModal, isEditing, form, startDayOfWeek, chartColors, fixedItems, newFixed, currentYearMonthStr, displayUid, chartRef, totalExpenseFiltered, dailyAverage,
                 changeMonth: (o) => { const d = new Date(currentDate.value); d.setMonth(d.getMonth() + o); currentDate.value = d; },
                 selectDate: (d) => selectedDate.value = d,
                 formatYearMonth: (d) => d.toLocaleString('default', { month: 'short', year: 'numeric' }),
