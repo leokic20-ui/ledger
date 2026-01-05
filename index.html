@@ -13,14 +13,35 @@
     
     <link rel="apple-touch-icon" href="icon.png"> 
     <meta name="apple-mobile-web-app-capable" content="yes">
-    
-    <!-- 修改了這裡：從 'black-translucent' 改為 'black' -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
 
     <style>
-        body { background-color: #1a1a1a; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+        /* 核心修改：鎖死 Body */
+        html, body { 
+            height: 100%; 
+            width: 100%; 
+            margin: 0; 
+            overflow: hidden; /* 禁止全頁捲動 */
+            position: fixed; /* 強制固定，防止 iOS Safari 回彈 */
+        }
+        
+        body { 
+            background-color: #1a1a1a; 
+            color: #ffffff; 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; 
+            -webkit-tap-highlight-color: transparent; 
+        }
+
         * { touch-action: manipulation; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* 自定義捲軸樣式 (讓捲動區更像 App) */
+        .custom-scroll {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch; /* iOS 慣性滑動 */
+            overscroll-behavior-y: contain; /* 防止滑動穿透到 Body */
+        }
+        .custom-scroll::-webkit-scrollbar { display: none; } /* 隱藏捲軸條 */
+
         .neo-card { background-color: #262626; border: 2px solid #333; box-shadow: 4px 4px 0px 0px #000; border-radius: 12px; }
         .sticker-btn { background-color: #FF9900; color: black; border: 2px solid black; box-shadow: 4px 4px 0px 0px #000; font-weight: 900; text-transform: uppercase; }
         .sticker-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px 0px #000; }
@@ -30,15 +51,18 @@
         .pop-enter-active, .pop-leave-active { transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
         .pop-enter-from { opacity: 0; transform: scale(0.95); }
         .pop-leave-to { opacity: 0; transform: scale(1.05); display: none; }
+        
+        /* 安全區域設定 */
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
         .safe-pt { padding-top: env(safe-area-inset-top); }
     </style>
 </head>
-<body class="h-[100dvh] w-full overflow-hidden flex flex-col">
+<body class="flex flex-col w-full">
 
-<div id="app" class="flex flex-col h-full w-full max-w-md mx-auto relative">
+<!-- App Container: 佔滿 100% 高度 -->
+<div id="app" class="flex flex-col h-full w-full max-w-md mx-auto relative overflow-hidden">
 
-    <!-- HEADER -->
+    <!-- HEADER: 固定在頂部 -->
     <header class="safe-pt px-4 pt-4 pb-2 flex justify-between items-center bg-[#1a1a1a] border-b-2 border-[#333] z-20 shrink-0">
         <h1 class="text-xl font-black italic">LEDGER<span class="text-[#FF9900]">.OS</span></h1>
         <div class="flex items-center gap-2 bg-[#262626] px-2 py-1 rounded border border-[#333]">
@@ -47,8 +71,11 @@
         </div>
     </header>
 
-    <!-- MAIN CONTENT -->
-    <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-28 no-scrollbar relative">
+    <!-- MAIN CONTENT: 唯一可捲動區域 -->
+    <!-- flex-1: 佔據剩餘空間 -->
+    <!-- custom-scroll: 應用捲動樣式 -->
+    <!-- pb-28: 底部留白，防止被 FAB 和 Nav 擋住 -->
+    <main class="flex-1 custom-scroll p-4 pb-28 relative">
         <transition name="pop" mode="out-in">
             
             <!-- VIEW 1: CALENDAR -->
@@ -185,8 +212,8 @@
     <!-- FAB -->
     <button @click="openAddModal" class="absolute bottom-24 right-5 w-16 h-16 rounded-full sticker-btn flex items-center justify-center z-30 text-4xl pb-1">+</button>
 
-    <!-- NAV -->
-    <nav class="safe-pb bg-[#1a1a1a] border-t-2 border-[#333] h-20 shrink-0 flex justify-around items-center z-20">
+    <!-- NAV: 固定在底部 -->
+    <nav class="safe-pb bg-[#1a1a1a] border-t-2 border-[#333] h-20 shrink-0 flex justify-around items-center z-20 w-full">
         <button v-for="v in ['calendar', 'accounts', 'charts', 'settings']" @click="currentView = v" class="flex flex-col items-center justify-center w-16 h-full transition-all active:scale-90">
             <span class="text-2xl mb-1 filter drop-shadow-md" :class="currentView === v ? 'opacity-100 scale-110' : 'opacity-40 grayscale'">{{ {calendar:'📅', accounts:'💳', charts:'📊', settings:'⚙️'}[v] }}</span>
             <span class="text-[9px] font-black uppercase tracking-wider" :class="currentView === v ? 'text-[#FF9900]' : 'text-gray-600'">{{ v }}</span>
