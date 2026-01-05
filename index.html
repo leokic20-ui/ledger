@@ -103,7 +103,6 @@
                             <div>
                                 <div class="font-bold text-sm flex items-center gap-1">
                                     {{ t.category }}
-                                    <!-- 標記自動生成的項目 -->
                                     <span v-if="t.fixedItemId" class="text-[8px] bg-[#333] px-1 rounded text-gray-400 border border-gray-600">AUTO</span>
                                 </div>
                                 <div class="text-[10px] text-gray-500">{{ t.account }} <span v-if="t.note">/ {{ t.note }}</span></div>
@@ -176,18 +175,23 @@
                 </div>
             </div>
 
-            <!-- VIEW 4: SETTINGS -->
+            <!-- VIEW 4: SETTINGS (FIXED ITEMS MODIFIED) -->
             <div v-else-if="currentView === 'settings'" key="set" class="space-y-6">
                 <div class="neo-card p-4 bg-[#262626]">
                     <h3 class="text-[#FF9900] font-black text-sm mb-3 uppercase flex items-center gap-2"><span>🔄</span> Fixed Monthly Items</h3>
                     <div v-for="(item, idx) in fixedItems" :key="idx" class="flex justify-between items-center bg-[#1a1a1a] p-2 rounded mb-2 border border-[#333]">
-                        <div>
+                        <div class="flex-1">
                             <div class="font-bold text-xs">{{ item.category }} (${{ item.amount }})</div>
-                            <div class="text-[10px] text-gray-500">Auto-adds on 1st of month ({{ item.startMonth }} ➝ {{ item.endMonth || 'Forever' }})</div>
+                            <div class="text-[10px] text-gray-500">Auto on 1st ({{ item.startMonth }} ➝ {{ item.endMonth || 'Forever' }})</div>
                         </div>
-                        <button @click="removeFixedItem(idx)" class="text-red-500 font-bold px-2">×</button>
+                        <div class="flex items-center gap-1">
+                            <button @click="editFixedItem(item)" class="text-blue-400 font-bold px-2 py-1 bg-[#333] rounded text-[10px]">EDIT</button>
+                            <button @click="removeFixedItem(idx)" class="text-red-500 font-bold px-2 py-1 bg-[#333] rounded text-[10px]">×</button>
+                        </div>
                     </div>
-                    <div class="mt-3 pt-3 border-t border-[#333] space-y-2">
+                    
+                    <div class="mt-3 pt-3 border-t border-[#333] space-y-2 relative">
+                        <div v-if="isEditingFixed" class="text-[10px] text-[#FF9900] font-black uppercase mb-1">Editing Rule</div>
                         <div class="flex gap-2">
                             <select v-model="newFixed.type" class="w-1/3 text-xs p-2"><option value="expense">Exp</option><option value="income">Inc</option></select>
                             <input v-model.number="newFixed.amount" placeholder="$" class="w-2/3 text-xs p-2 font-mono">
@@ -198,7 +202,13 @@
                         <div class="flex gap-2 items-center"><span class="text-[10px] text-gray-500 w-10">FROM</span><input v-model="newFixed.startMonth" type="month" class="flex-1 text-xs p-2 font-mono"></div>
                         <div class="flex gap-2 items-center"><span class="text-[10px] text-gray-500 w-10">TO</span><input v-model="newFixed.endMonth" type="month" class="flex-1 text-xs p-2 font-mono"></div>
                         <input v-model="newFixed.note" placeholder="Note (Optional)" class="w-full text-xs p-2">
-                        <button @click="addFixedItem" class="sticker-btn bg-[#333] text-white w-full py-2 text-xs rounded mt-2">ADD RULE</button>
+                        
+                        <div class="flex gap-2 mt-2">
+                            <button v-if="isEditingFixed" @click="cancelEditFixed" class="flex-1 py-2 bg-[#333] text-gray-400 font-bold text-xs rounded">CANCEL</button>
+                            <button @click="saveFixedItem" class="flex-[2] sticker-btn bg-[#333] text-white py-2 text-xs rounded">
+                                {{ isEditingFixed ? 'UPDATE RULE' : 'ADD RULE' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="neo-card p-4 bg-[#262626]">
@@ -246,36 +256,29 @@
     <div v-if="showModal" class="fixed inset-0 bg-black/90 z-50 flex items-end justify-center backdrop-blur-sm safe-pb">
         <div @click="closeModal" class="absolute inset-0"></div>
         <div class="bg-[#1a1a1a] w-full max-w-md rounded-t-3xl border-t-4 border-[#FF9900] p-5 space-y-3 relative card-shadow mb-4 mx-2">
-            
             <div class="flex justify-between items-center">
                 <h3 class="font-black text-xl italic">{{ isEditing ? 'EDIT' : 'NEW' }} ENTRY</h3>
                 <button @click="closeModal" class="text-xl text-gray-500 w-6 h-6 flex items-center justify-center bg-[#262626] rounded-full">×</button>
             </div>
-            
             <div class="flex bg-[#262626] p-1 rounded-xl border border-[#333] h-10">
                 <button @click="form.type = 'expense'" :class="['flex-1 rounded-lg font-black text-xs transition-all flex items-center justify-center', form.type === 'expense' ? 'bg-[#333] text-white shadow-sm' : 'text-gray-500']">EXPENSE</button>
                 <button @click="form.type = 'income'" :class="['flex-1 rounded-lg font-black text-xs transition-all flex items-center justify-center', form.type === 'income' ? 'bg-[#333] text-[#FF9900] shadow-sm' : 'text-gray-500']">INCOME</button>
             </div>
-            
             <div class="relative">
                 <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#FF9900] font-black text-xl">$</span>
                 <input v-model.number="form.amount" type="number" inputmode="decimal" placeholder="0" class="w-full py-3 pl-8 pr-4 text-3xl font-mono font-bold rounded-xl text-right bg-[#262626] border-2 border-[#333] focus:border-[#FF9900]">
             </div>
-            
             <div class="grid grid-cols-4 gap-2 py-1">
                 <button v-for="cat in categories" @click="form.category = cat.name" :class="['flex flex-col items-center justify-center p-2 rounded-xl border-2 transition-all active:scale-95 h-16', form.category === cat.name ? 'border-[#FF9900] bg-[#262626]' : 'border-transparent bg-[#1a1a1a]']">
                     <span class="text-xl mb-1">{{ cat.icon }}</span>
                     <span class="text-[8px] font-bold uppercase truncate w-full text-center">{{ cat.name }}</span>
                 </button>
             </div>
-            
             <div class="grid grid-cols-2 gap-3">
                 <select v-model="form.account" class="p-2 rounded-xl font-bold text-xs uppercase bg-[#262626] h-10"><option v-for="acc in accounts" :value="acc.name">{{ acc.name }}</option></select>
                 <input v-model="form.date" type="date" class="p-2 rounded-xl font-mono text-xs bg-[#262626] h-10">
             </div>
-            
             <input v-model="form.note" type="text" placeholder="Add a note..." class="w-full p-3 rounded-xl text-xs bg-[#262626]">
-            
             <div class="flex gap-3 pt-1">
                 <button v-if="isEditing" @click="deleteTransaction" class="flex-1 py-3 bg-red-900/30 text-red-500 font-black rounded-xl border-2 border-red-900 active:scale-95 transition-transform text-xs">DEL</button>
                 <button @click="saveTransaction" class="flex-[2] py-3 bg-[#FF9900] text-black font-black rounded-xl border-2 border-black shadow-[4px_4px_0px_black] active:translate-y-1 active:shadow-none transition-all text-sm">CONFIRM</button>
@@ -326,18 +329,21 @@
             const filterRange = ref({ start: startOfMonth, end: endOfMonth });
             const tempFilter = ref({ ...filterRange.value });
 
+            // Fixed Items State
+            const isEditingFixed = ref(false);
+            const editingFixedId = ref(null);
             const newFixed = ref({ type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' });
+            
             const chartColors = ['#FF9900', '#00CED1', '#FF69B4', '#9370DB', '#4169E1', '#FFD700', '#32CD32', '#FF4500'];
             const accounts = ref([{ name: 'Bank', icon: '🏦' }, { name: 'Cash', icon: '💵' }, { name: 'Credit', icon: '💳' }, { name: 'Octopus', icon: '🐙' }]);
             
-            // 新增 Household 類別
             const categories = [
                 { name: 'Food', icon: '🍔' }, 
                 { name: 'Transport', icon: '🚌' }, 
                 { name: 'Shopping', icon: '🛍️' }, 
                 { name: 'Ent.', icon: '🎬' }, 
                 { name: 'Bills', icon: '🧾' }, 
-                { name: 'Household', icon: '🏠' }, // 新增
+                { name: 'Household', icon: '🏠' },
                 { name: 'Salary', icon: '💰' }, 
                 { name: 'Travel', icon: '✈️' }, 
                 { name: 'Health', icon: '💊' }
@@ -403,11 +409,50 @@
                 return newRange;
             };
 
-            const addFixedItem = async () => { 
-                if (!newFixed.value.amount || !newFixed.value.startMonth) return alert("Start Month required!"); 
-                await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value); 
+            // Fixed Item Functions
+            const editFixedItem = (item) => {
+                isEditingFixed.value = true;
+                editingFixedId.value = item.id;
+                newFixed.value = { ...item };
+            };
+
+            const cancelEditFixed = () => {
+                isEditingFixed.value = false;
+                editingFixedId.value = null;
                 newFixed.value = { type: 'expense', amount: '', category: 'Food', note: '', startMonth: '', endMonth: '' };
-                alert("Auto-rule added. It will trigger on the 1st of each month.");
+            };
+
+            const saveFixedItem = async () => { 
+                if (!newFixed.value.amount || !newFixed.value.startMonth) return alert("Start Month required!"); 
+                
+                try {
+                    if (isEditingFixed.value) {
+                        await db.collection('users').doc(userId.value).collection('fixedItems').doc(editingFixedId.value).update(newFixed.value);
+                    } else {
+                        await db.collection('users').doc(userId.value).collection('fixedItems').add(newFixed.value);
+                        alert("Auto-rule added. It triggers on the 1st of each month.");
+                    }
+                    cancelEditFixed();
+                } catch(e) { alert(e.message); }
+            };
+
+            const removeFixedItem = async (idx) => {
+                const item = fixedItems.value[idx];
+                if (confirm("Delete this rule?")) {
+                    const deleteTransactions = confirm("Do you also want to delete all transactions generated by this rule?");
+                    
+                    try {
+                        // 1. Delete transactions if requested
+                        if (deleteTransactions) {
+                            const snapshot = await db.collection('users').doc(userId.value).collection('transactions').where('fixedItemId', '==', item.id).get();
+                            const batch = db.batch();
+                            snapshot.docs.forEach(doc => batch.delete(doc.ref));
+                            await batch.commit();
+                        }
+                        // 2. Delete the rule itself
+                        await db.collection('users').doc(userId.value).collection('fixedItems').doc(item.id).delete();
+                    } catch(e) { alert(e.message); }
+                }
             };
 
             const saveTransaction = async () => {
@@ -420,43 +465,33 @@
                 } catch (e) { alert(e.message); }
             };
             const deleteTransaction = async () => { if (confirm("Delete?")) { await db.collection('users').doc(userId.value).collection('transactions').doc(editingId.value).delete(); closeModal(); } };
-            const removeFixedItem = async (idx) => await db.collection('users').doc(userId.value).collection('fixedItems').doc(fixedItems.value[idx].id).delete();
             const exportJSON = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(transactions.value, null, 2)], { type: "application/json" })); a.download = `ledger_backup.json`; a.click(); };
 
-            // 自動檢查固定項目邏輯 (核心功能)
             const checkFixedItems = async () => {
                 if (!userId.value || fixedItems.value.length === 0) return;
-                
                 const now = new Date();
-                const currentMonthStr = getHKDate(now).slice(0, 7); // "2024-01"
+                const currentMonthStr = getHKDate(now).slice(0, 7);
                 const firstDayOfCurrentMonth = `${currentMonthStr}-01`;
 
-                // 只有今天 >= 1號才執行 (其實每天都可以檢查，因為我們會用 ID 防止重複)
-                // 這裡我們簡單點，只要打開 App 就檢查一遍
-                
                 for (const item of fixedItems.value) {
-                    // 1. 檢查日期範圍是否有效
-                    if (currentMonthStr < item.startMonth) continue; // 尚未開始
-                    if (item.endMonth && currentMonthStr > item.endMonth) continue; // 已經結束
+                    if (currentMonthStr < item.startMonth) continue;
+                    if (item.endMonth && currentMonthStr > item.endMonth) continue;
 
-                    // 2. 檢查本月是否已經產生過
-                    // 我們用一個特殊的 Query: 找這個月，且 fixedItemId 等於當前 item.id 的交易
                     const snapshot = await db.collection('users').doc(userId.value).collection('transactions')
                         .where('fixedItemId', '==', item.id)
                         .where('date', '==', firstDayOfCurrentMonth)
                         .get();
 
                     if (snapshot.empty) {
-                        // 3. 如果沒有，自動生成
                         console.log(`Auto-adding fixed item: ${item.category}`);
                         await db.collection('users').doc(userId.value).collection('transactions').add({
                             type: item.type,
                             amount: item.amount,
                             category: item.category,
-                            account: 'Bank', // 預設 Bank，你可以改
+                            account: 'Bank',
                             date: firstDayOfCurrentMonth,
                             note: item.note || 'Auto Fixed',
-                            fixedItemId: item.id // 關鍵：標記這是由哪個規則生成的
+                            fixedItemId: item.id
                         });
                     }
                 }
@@ -497,13 +532,9 @@
                 if (user) { 
                     userId.value = user.uid; 
                     syncStatusColor.value = 'bg-green-500'; 
-                    // 監聽數據
                     db.collection('users').doc(userId.value).collection('transactions').orderBy('date', 'desc').onSnapshot(s => transactions.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
-                    
-                    // 監聽固定項目，並在載入後執行檢查
                     db.collection('users').doc(userId.value).collection('fixedItems').onSnapshot(s => {
                         fixedItems.value = s.docs.map(d => ({ id: d.id, ...d.data() }));
-                        // 當固定項目列表載入完成後，執行一次自動檢查
                         setTimeout(checkFixedItems, 2000); 
                     });
                 } else { 
@@ -551,7 +582,18 @@
                     showModal.value = true; 
                 },
                 editTransaction: (t) => { isEditing.value = true; editingId.value = t.id; form.value = { ...t }; showModal.value = true; },
-                closeModal, saveTransaction, deleteTransaction, addFixedItem, removeFixedItem, dayClass: (d) => {
+                closeModal, saveTransaction, deleteTransaction, 
+                
+                // Fixed Items - New Exports
+                addFixedItem: saveFixedItem, // Mapping 'Add' button to save function
+                saveFixedItem, 
+                removeFixedItem, 
+                editFixedItem, 
+                cancelEditFixed,
+                isEditingFixed,
+                newFixed,
+
+                dayClass: (d) => {
                     if (selectedDate.value === d.dateStr) return 'bg-[#FF9900] text-black border-black shadow-[2px_2px_0px_black]';
                     if (d.dateStr === getHKDate()) return 'border-[#FF9900] text-[#FF9900]';
                     return 'bg-[#262626] text-gray-300';
